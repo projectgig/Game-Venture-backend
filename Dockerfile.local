@@ -1,0 +1,38 @@
+FROM node:20-alpine AS base
+
+WORKDIR /app
+
+# Dependencies stage
+FROM base AS deps
+
+RUN apk add --no-cache --virtual .build-deps \
+    python3 make g++ \
+    && apk add --no-cache openssl
+
+COPY package.json yarn.lock ./
+COPY prisma ./prisma
+
+RUN yarn install --frozen-lockfile --production=false
+
+RUN npx prisma generate
+
+# Local stage
+FROM base AS dev
+
+RUN apk add --no-cache --virtual .build-deps \
+    python3 make g++ \
+    && apk add --no-cache openssl
+
+COPY package.json yarn.lock ./
+
+RUN yarn install --frozen-lockfile --production=false \
+    && yarn cache clean --force
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/prisma ./prisma
+
+COPY . .
+
+EXPOSE 5000
+
+CMD ["yarn", "dev"]

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-green
+  namespace: venture-staging
+  labels:
+    app: venture-api
+    color: green
+    environment: staging
+spec:
+  replicas: 0 # Will be scaled by CI/CD
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: venture-api
+      color: green
+  template:
+    metadata:
+      labels:
+        app: venture-api
+        color: green
+        environment: staging
+    spec:
+      containers:
+        - name: venture-api
+          image: gigproject/venture-api:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          env:
+            - name: REDIS_HOST
+              value: venture-redis
+            - name: REDIS_PORT
+              value: "6379"
+          envFrom:
+            - secretRef:
+                name: venture-env-secrets
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # Increased delays to ensure app is fully ready
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+              scheme: HTTP
+            initialDelaySeconds: 45 # Increased from 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+              scheme: HTTP
+            initialDelaySeconds: 20 # Increased from 15
+            periodSeconds: 10
+            timeoutSeconds: 5 # Increased from 3
+            successThreshold: 2 # Require 2 successful checks
+            failureThreshold: 3
+          # Graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 25"]
+      terminationGracePeriodSeconds: 45

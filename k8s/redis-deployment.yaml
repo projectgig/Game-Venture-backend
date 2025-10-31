@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: venture-redis
+  namespace: venture-staging
+  labels:
+    app: venture-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: venture-redis
+  template:
+    metadata:
+      labels:
+        app: venture-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - --appendonly
+            - "yes"
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-pvc-new

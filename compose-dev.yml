@@ -1,0 +1,39 @@
+services:
+  app-dev:
+    container_name: venture-api-local
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: dev
+    ports:
+      - "1337:5000"
+    env_file:
+      - .env.development
+    environment:
+      NODE_ENV: development
+      REDIS_HOST: venture-redis
+      REDIS_PORT: 6379
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: yarn dev
+
+  redis:
+    container_name: venture-redis
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+      timeout: 3s
+
+volumes:
+  redis_data_dev:

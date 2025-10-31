@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: venture
+  labels:
+    environment: production
+    project: venture-api

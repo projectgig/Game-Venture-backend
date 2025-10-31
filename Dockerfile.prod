@@ -1,0 +1,48 @@
+# Base
+FROM --platform=linux/amd64 node:20-alpine AS base
+WORKDIR /app
+
+# Dependencies stage
+FROM base AS deps
+RUN apk add --no-cache libc6-compat openssl
+
+COPY package.json yarn.lock ./ 
+COPY prisma ./prisma
+RUN yarn install --frozen-lockfile --production && npx prisma generate
+
+# Builder stage
+FROM base AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/prisma ./prisma
+COPY . .
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN yarn build
+
+# Runner stage
+FROM base AS runner
+WORKDIR /app
+
+RUN apk add --no-cache openssl dumb-init
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextuser
+
+# Copy built files
+COPY --from=deps --chown=nextuser:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextuser:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextuser:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextuser:nodejs /app/public ./public
+COPY --from=builder --chown=nextuser:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextuser:nodejs /app/next.config.* ./
+
+USER nextuser
+
+EXPOSE 5000
+ENV PORT=5000
+ENV HOSTNAME="0.0.0.0"
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["yarn", "start"]

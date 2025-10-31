@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: venture-api-ingress
+  namespace: venture-staging
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Force Traefik to check backend health more frequently
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "false"
+    # Reduce buffering to detect backend issues faster
+    traefik.ingress.kubernetes.io/buffering: "false"
+    # Health check configuration
+    traefik.ingress.kubernetes.io/service.healthcheck.path: /api/health
+    traefik.ingress.kubernetes.io/service.healthcheck.interval: 2s
+    traefik.ingress.kubernetes.io/service.healthcheck.timeout: 3s
+    # Connection settings
+    traefik.ingress.kubernetes.io/service.passhostheader: "true"
+    # Retry on connection failure
+    traefik.ingress.kubernetes.io/retry.attempts: "3"
+    # CRITICAL: Reduce provider throttle duration for faster updates
+    # traefik.ingress.kubernetes.io/router.middlewares: default-compress@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: staging.casinochautari.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: app-service
+                port:
+                  number: 80
+            path: /api
+            pathType: Prefix
+  tls:
+    - hosts:
+        - staging.casinochautari.com
+      secretName: staging-tls

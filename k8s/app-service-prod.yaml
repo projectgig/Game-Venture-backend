@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: venture
+  labels:
+    app: venture-api
+spec:
+  type: ClusterIP
+  selector:
+    app: venture-api
+    color: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5000
+      protocol: TCP
+  sessionAffinity: None

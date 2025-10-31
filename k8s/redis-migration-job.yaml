@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redis-data-migration
+  namespace: venture-staging
+spec:
+  template:
+    spec:
+      containers:
+        - name: data-copy
+          image: bitnami/kubectl:latest # has kubectl built-in
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+
+              NAMESPACE="venture-staging"
+              NEW_PVC="redis-pvc-new"
+              BACKUP_DIR="/tmp/redis-backup"
+
+              echo "🔹 Checking Redis pod..."
+              REDIS_POD=$(kubectl get pod -n $NAMESPACE -l app=venture-redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+              if [ -z "$REDIS_POD" ]; then
+                echo "❌ No running Redis pod found. Exiting."
+                exit 1
+              fi
+              echo "Redis pod: $REDIS_POD"
+
+              # Create backup directory
+              mkdir -p $BACKUP_DIR
+
+              echo "🔹 Copying data from running Redis pod..."
+              kubectl cp $NAMESPACE/$REDIS_POD:/data $BACKUP_DIR
+
+              echo "🔹 Copying data into new PVC..."
+              cp -av $BACKUP_DIR/. /new-data/
+
+              echo "✅ Data migration complete. Contents of new PVC:"
+              ls -lah /new-data/
+          volumeMounts:
+            - name: new-data
+              mountPath: /new-data
+      restartPolicy: Never
+      volumes:
+        - name: new-data
+          persistentVolumeClaim:
+            claimName: redis-pvc-new
+  backoffLimit: 3

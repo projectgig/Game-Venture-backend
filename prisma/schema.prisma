@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id       String  @id @default(cuid())
+  username String  @unique
+  email    String? @unique
+  password String
+  points   Int     @default(0)
+
+  contactNumber String?
+  remarks       String?
+  isActive      Boolean   @default(true)
+  role          Role      @default(PLAYER)
+  parentId      String?
+  parent        Company?  @relation("CompanyChildren", fields: [parentId], references: [id])
+  children      Company[] @relation("CompanyChildren")
+  status        Status?   @default(ACTIVE)
+
+  rechargePerm Boolean @default(false)
+  withdrawPerm Boolean @default(false)
+  agentProtect Boolean @default(false)
+
+  lastLoggedIn DateTime?
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  CompanyActivity CompanyActivity[]
+
+  @@map("companies")
+}
+
+model CompanyActivity {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  ip        String?
+  device    Json?
+  location  Json?
+  createdAt DateTime @default(now())
+}
+
+enum Status {
+  ACTIVE
+  BLOCK
+}
+
+enum Role {
+  ADMIN
+  DISTRIBUTOR
+  SUB_DISTRIBUTOR
+  STORE
+  PLAYER
+}
