@@ -1,5 +1,4 @@
 import { createLogger, format, transports } from "winston";
-import path from "path";
 
 const { combine, timestamp, printf, colorize, errors } = format;
 
@@ -24,7 +23,7 @@ const logger = createLogger({
     colorize({ all: true }),
     timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
     errors({ stack: true }),
-    customFormat,
+    customFormat
   ),
   transports: [
     new transports.Console(),

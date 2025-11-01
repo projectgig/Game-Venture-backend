@@ -7,6 +7,8 @@ import {
 } from "../utils/jwt";
 import { db } from "../database/prismaClient";
 import { Company, CompanyActivity } from "@prisma/client";
+import { StatusCodes } from "http-status-codes";
+import loggerInstance from "@game/common/logger/logger.service";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -16,7 +18,7 @@ export const login = async (req: Request, res: Response) => {
 
     if (!hasUsernameOrEmail || !password) {
       return res
-        .status(400)
+        .status(StatusCodes.BAD_REQUEST)
         .json({ message: "Username and password are required" });
     }
 
@@ -31,7 +33,9 @@ export const login = async (req: Request, res: Response) => {
     )) as Company | null;
 
     if (!company) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Invalid credentials" });
     }
 
     const isPasswordValid = await bcrypt.compare(password, company.password);
@@ -92,7 +96,9 @@ export const login = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Login error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 
@@ -100,7 +106,9 @@ export const refreshToken = async (req: Request, res: Response) => {
   try {
     const token = req.cookies?.refreshToken;
     if (!token) {
-      return res.status(401).json({ message: "No refresh token provided" });
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "No refresh token provided" });
     }
 
     const decoded = verifyToken(token, "refresh") as {
@@ -108,7 +116,9 @@ export const refreshToken = async (req: Request, res: Response) => {
       username: string;
     };
     if (!decoded) {
-      return res.status(403).json({ message: "Invalid refresh token" });
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Invalid refresh token" });
     }
 
     const company = (await db.findUnique(
@@ -118,7 +128,9 @@ export const refreshToken = async (req: Request, res: Response) => {
     )) as Company | null;
 
     if (!company || !company.isActive) {
-      return res.status(403).json({ message: "User no longer valid" });
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "User no longer valid" });
     }
 
     const accessToken = generateAccessToken({
@@ -132,9 +144,9 @@ export const refreshToken = async (req: Request, res: Response) => {
       message: "Access token refreshed successfully",
     });
   } catch (error) {
-    console.error("Refresh token error:", error);
+    loggerInstance.error(`Refresh token error:, ${error}`);
     return res
-      .status(401)
+      .status(StatusCodes.UNAUTHORIZED)
       .json({ message: "Invalid or expired refresh token" });
   }
 };
@@ -144,7 +156,9 @@ export const logout = async (req: Request, res: Response) => {
     res.clearCookie("refreshToken");
     return res.json({ message: "Logout successful" });
   } catch (error) {
-    console.error("Logout error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Logout error:, ${error}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };

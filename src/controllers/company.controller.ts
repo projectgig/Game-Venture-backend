@@ -3,15 +3,12 @@ import bcrypt from "bcrypt";
 import { db, prisma } from "../database/prismaClient";
 import { Company, Prisma, Role } from "@prisma/client";
 import { ChangePasswordBody } from "@game/types/company.type";
+import { roleHierarchy } from "@game/common/middleware/rbac.middleware";
+import { StatusCodes } from "http-status-codes";
+import loggerInstance from "@game/common/logger/logger.service";
+import { handleETag } from "@game/utils/etagUtil";
 
-const roleHierarchy: Record<Role, number> = {
-  ADMIN: 5,
-  DISTRIBUTOR: 4,
-  SUB_DISTRIBUTOR: 3,
-  STORE: 2,
-  PLAYER: 1,
-};
-
+// check if targetId is in my hierarchy
 async function isInMyHierarchy(
   myId: string,
   targetId: string
@@ -56,7 +53,7 @@ export const createUser = async (
 
     if (!username || !password || !role) {
       return res
-        .status(400)
+        .status(StatusCodes.BAD_REQUEST)
         .json({ message: "Username, password, and role are required" });
     }
 
@@ -64,7 +61,7 @@ export const createUser = async (
     const newUserLevel = roleHierarchy[role as Role];
 
     if (newUserLevel >= creatorLevel) {
-      return res.status(403).json({
+      return res.status(StatusCodes.FORBIDDEN).json({
         message: "You cannot create a user with equal or higher role",
       });
     }
@@ -75,7 +72,9 @@ export const createUser = async (
       { ttl: 60 }
     );
     if (existing) {
-      return res.status(400).json({ message: "Username already exists" });
+      return res
+        .status(StatusCodes.CONFLICT)
+        .json({ message: "Username already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -98,7 +97,7 @@ export const createUser = async (
       },
     })) as Company;
 
-    return res.status(201).json({
+    return res.status(StatusCodes.CREATED).json({
       message: "User created successfully",
       user: {
         id: newUser.id,
@@ -111,15 +110,20 @@ export const createUser = async (
       },
     });
   } catch (err) {
-    console.error("Create user error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Create user error:"${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 
 export const getDownline = async (req: Request, res: Response) => {
   try {
     const user = req.user;
-    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (!user)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
 
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -206,6 +210,12 @@ export const getDownline = async (req: Request, res: Response) => {
       LIMIT ${limit} OFFSET ${offset}
     `;
 
+    const latestUpdate = downline.reduce(
+      (max, item) => Math.max(max, new Date(item.updatedAt).getTime()),
+      0
+    );
+    if (handleETag(req, res, { updatedAt: new Date(latestUpdate) })) return;
+
     return res.json({
       meta: {
         page,
@@ -217,15 +227,20 @@ export const getDownline = async (req: Request, res: Response) => {
       message: "Downline fetched successfully",
     });
   } catch (err) {
-    console.error("Get downline error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Get downline error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 
 export const getDownlineDashboard = async (req: Request, res: Response) => {
   try {
     const user = req.user;
-    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (!user)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
 
     const now = new Date();
     const todayStart = new Date(
@@ -280,7 +295,7 @@ export const getDownlineDashboard = async (req: Request, res: Response) => {
     const downlineIdList = downlineIds.map((d) => d.id);
 
     if (downlineIdList.length === 0) {
-      return res.json({
+      const emptyResponse = {
         data: {
           overview: {
             totalDownline: 0,
@@ -326,11 +341,29 @@ export const getDownlineDashboard = async (req: Request, res: Response) => {
           roleBreakdown: [],
           statusBreakdown: [],
         },
+      };
+
+      if (handleETag(req, res, { updatedAt: new Date(0) })) return;
+
+      return res.json({
+        ...emptyResponse,
         message: "Dashboard data fetched successfully",
       });
     }
 
-    // OVERVIEW SECTION
+    const latestUpdateResult = await db.findUnique<Company>("company", {
+      where: {
+        id: { in: downlineIdList },
+      },
+      orderBy: [{ updatedAt: "desc" }],
+      limit: 1,
+      select: ["updatedAt"],
+    });
+
+    const latestUpdate = latestUpdateResult?.updatedAt || new Date();
+
+    if (handleETag(req, res, { updatedAt: latestUpdate })) return;
+
     const totalDownline = downlineIdList.length;
 
     // Role counts
@@ -622,7 +655,10 @@ export const getDownlineDashboard = async (req: Request, res: Response) => {
 export const getUser = async (req: Request<{ id: string }>, res: Response) => {
   try {
     const currentUser = req.user;
-    if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
+    if (!currentUser)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
 
     const { id } = req.params;
 
@@ -644,15 +680,21 @@ export const getUser = async (req: Request<{ id: string }>, res: Response) => {
     );
 
     if (!targetUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res
+        .status(StatusCodes.NOT_FOUND)
+        .json({ message: "User not found" });
     }
+
+    if (handleETag(req, res, targetUser)) return;
 
     const allowed =
       (await isInMyHierarchy(currentUser.id, id)) ||
       currentUser.role === "ADMIN";
 
     if (!allowed) {
-      return res.status(403).json({ message: "Access denied" });
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json({ message: "Access denied" });
     }
 
     return res.json({
@@ -660,19 +702,25 @@ export const getUser = async (req: Request<{ id: string }>, res: Response) => {
       user: targetUser,
     });
   } catch (err) {
-    console.error("Get user error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Get user error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
-    if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
+    if (!currentUser)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
 
     const { id } = req.params;
+
     if (id === currentUser.id) {
-      return res.status(400).json({
+      res.status(StatusCodes.FORBIDDEN).json({
         message: "Use change-password endpoint to update your own data",
       });
     }
@@ -689,7 +737,7 @@ export const updateUser = async (req: Request, res: Response) => {
       currentUser.role === "ADMIN";
     if (!allowed) return res.status(403).json({ message: "Access denied" });
 
-    const { role, username, password, ...safeUpdates } = req.body;
+    const { ...safeUpdates } = req.body;
 
     const updated = (await db.update<Company>("company", {
       where: { id },
@@ -709,8 +757,10 @@ export const updateUser = async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error("Update user error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Update user error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 
@@ -720,12 +770,15 @@ export const changePassword = async (
 ) => {
   try {
     const user = req.user;
-    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (!user)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
 
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword) {
       return res
-        .status(400)
+        .status(StatusCodes.BAD_REQUEST)
         .json({ message: "Old and new password are required" });
     }
 
@@ -749,8 +802,10 @@ export const changePassword = async (
 
     return res.json({ message: "Password changed successfully" });
   } catch (err) {
-    console.error("Change password error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Change password error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 
@@ -760,7 +815,10 @@ export const toggleUserStatus = async (
 ) => {
   try {
     const currentUser = req.user;
-    if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
+    if (!currentUser)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized Access!" });
 
     const { id } = req.params;
     const { status } = req.body;
@@ -792,8 +850,10 @@ export const toggleUserStatus = async (
       isActive: updated.isActive,
     });
   } catch (err) {
-    console.error("Toggle status error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    loggerInstance.error(`Toggle status error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
   }
 };
 

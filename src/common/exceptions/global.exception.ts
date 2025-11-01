@@ -6,7 +6,7 @@ export class GlobalExceptionHandler {
     err: any,
     req: Request,
     res: Response,
-    _: NextFunction,
+    _: NextFunction
   ) => {
     const statusCode = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -15,11 +15,11 @@ export class GlobalExceptionHandler {
       logger.error(
         `HTTP ${statusCode} - ${req.method} ${req.originalUrl} - ${
           err.stack || err
-        }`,
+        }`
       );
     } else {
       logger.warn(
-        `HTTP ${statusCode} - ${req.method} ${req.originalUrl} - ${message}`,
+        `HTTP ${statusCode} - ${req.method} ${req.originalUrl} - ${message}`
       );
     }
 

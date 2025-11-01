@@ -137,3 +137,11 @@ export const requireCreatorOfBody = (fieldName: string) => {
     }
   };
 };
+
+export const roleHierarchy: Record<Role, number> = {
+  ADMIN: 5,
+  DISTRIBUTOR: 4,
+  SUB_DISTRIBUTOR: 3,
+  STORE: 2,
+  PLAYER: 1,
+};
