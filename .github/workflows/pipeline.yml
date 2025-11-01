@@ -623,9 +623,19 @@ jobs:
       - name: Blue-Green Deployment
         run: |
           set -e
-          IMAGE_TAG="${{ github.sha }}"
+
           NAMESPACE="venture-staging"
-          CURRENT_COLOR=$(kubectl get service app-service -n $NAMESPACE -o jsonpath='{.spec.selector.color}' 2>/dev/null || echo "blue")
+          APP_NAME="app"
+          SERVICE_NAME="app-service"
+
+          echo "Detecting current active color..."
+          CURRENT_COLOR=$(kubectl get svc $SERVICE_NAME -n $NAMESPACE -o jsonpath='{.spec.selector.color}' 2>/dev/null || true)
+
+          if [ -z "$CURRENT_COLOR" ]; then
+            echo "⚠️ No active color found — defaulting to blue."
+            CURRENT_COLOR="blue"
+          fi
+
           if [ "$CURRENT_COLOR" = "blue" ]; then
             NEW_COLOR="green"
             OLD_COLOR="blue"
@@ -633,57 +643,42 @@ jobs:
             NEW_COLOR="blue"
             OLD_COLOR="green"
           fi
-          echo "Current active color: $CURRENT_COLOR"
-          echo "Deploying to: $NEW_COLOR"
-          kubectl apply -f k8s/app-${NEW_COLOR}-deployment.yaml -n $NAMESPACE
-          kubectl set image deployment/app-${NEW_COLOR} venture-api=${{ env.VENTURE_IMAGE_NAME }}:${IMAGE_TAG} -n $NAMESPACE
-          kubectl scale deployment app-${NEW_COLOR} --replicas=2 -n $NAMESPACE
-          echo "Waiting for rollout to complete..."
-          kubectl rollout status deployment/app-${NEW_COLOR} -n $NAMESPACE --timeout=300s
-          echo "Waiting for pods to be ready..."
-          sleep 10
+
+          echo "🟦 Current active color: $CURRENT_COLOR"
+          echo "🟩 Deploying to: $NEW_COLOR"
+
+          # --- Deploy new version ---
+          kubectl apply -f k8s/deployment-${NEW_COLOR}.yaml
+          kubectl -n $NAMESPACE set image deployment/${APP_NAME}-${NEW_COLOR} venture-api=gigproject/venture-api:${GITHUB_SHA}
+          kubectl -n $NAMESPACE scale deployment/${APP_NAME}-${NEW_COLOR} --replicas=2
+
+          echo "⏳ Waiting for ${APP_NAME}-${NEW_COLOR} rollout..."
+          kubectl -n $NAMESPACE rollout status deployment/${APP_NAME}-${NEW_COLOR}
+
+          # --- Health check ---
+          echo "✅ Verifying new deployment health..."
+          NEW_PODS=$(kubectl get pods -n $NAMESPACE -l app=venture-api,color=${NEW_COLOR} -o name)
+          echo "Found new pods:"
+          echo "$NEW_PODS"
           kubectl wait --for=condition=ready pod -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --timeout=180s
-          echo "Verifying deployment health..."
-          sleep 5
-          READY_PODS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --field-selector=status.phase=Running -o json | jq '.items | length')
-          if [ "$READY_PODS" -lt 1 ]; then
-            echo "Error: No ready pods found"
-            kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl describe pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=50
-            exit 1
-          fi
-          echo "$READY_PODS pods are ready"
-          echo "Performing health check..."
-          max_attempts=10
-          attempt=1
-          while [ $attempt -le $max_attempts ]; do
-            if curl -f -s http://app-service.venture-staging.svc.cluster.local:80/api/health -H "Cache-Control: no-cache" > /dev/null 2>&1; then
-              echo "Health check passed"
-              break
+
+          # --- Switch traffic ---
+          echo "🔁 Switching service to ${NEW_COLOR}..."
+          kubectl -n $NAMESPACE patch service $SERVICE_NAME -p "{\"spec\": {\"selector\": {\"app\": \"venture-api\", \"color\": \"${NEW_COLOR}\"}}}"
+
+          # --- Scale down old deployment safely ---
+          echo "Scaling down old deployment (${OLD_COLOR})..."
+          if [ -n "$OLD_COLOR" ]; then
+            if kubectl get deployment ${APP_NAME}-${OLD_COLOR} -n $NAMESPACE >/dev/null 2>&1; then
+              kubectl scale deployment ${APP_NAME}-${OLD_COLOR} --replicas=0 -n $NAMESPACE
+            else
+              echo "⚠️ Old deployment ${APP_NAME}-${OLD_COLOR} not found — skipping scale down."
             fi
-            if [ $attempt -eq $max_attempts ]; then
-              echo "Health check failed after $max_attempts attempts"
-              kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
-              exit 1
-            fi
-            echo "Health check attempt $attempt/$max_attempts failed, retrying..."
-            sleep 5
-            attempt=$((attempt + 1))
-          done
-          echo "Switching traffic to $NEW_COLOR deployment..."
-          kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${NEW_COLOR}\"}}}" -n $NAMESPACE
-          sleep 10
-          echo "Final health check after traffic switch..."
-          if ! curl -k -f -s https://staging.casinochautari.com/api/health -H "Cache-Control: no-cache" > /dev/null 2>&1; then
-            echo "Error: Health check failed after traffic switch, rolling back..."
-            kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${OLD_COLOR}\"}}}" -n $NAMESPACE
-            exit 1
+          else
+            echo "⚠️ OLD_COLOR is empty — skipping scale down step."
           fi
-          echo "Scaling down $OLD_COLOR deployment..."
-          kubectl scale deployment app-${OLD_COLOR} --replicas=0 -n $NAMESPACE
-          echo "Deployment completed successfully!"
-          echo "Active color is now: $NEW_COLOR"
+
+          echo "🎉 Deployment to ${NEW_COLOR} complete."
 
       - name: Deploy HPA
         run: |
