@@ -121,6 +121,10 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
+      - name: Ensure staging namespace exists
+        run: |
+          kubectl create namespace venture-staging --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Test SSH to Contabo (debug)
         uses: appleboy/ssh-action@v0.1.10
         with:
