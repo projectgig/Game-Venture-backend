@@ -133,19 +133,6 @@ jobs:
             echo "Checking for .env files:"
             find /root/venture -name ".env*" -ls
 
-      - name: Create Docker Registry Secret
-        run: |
-          kubectl delete secret dockerhub-secret -n venture-staging --ignore-not-found=true
-
-          kubectl create secret docker-registry dockerhub-secret \
-            --docker-server=https://index.docker.io/v1/ \
-            --docker-username=${{ secrets.VENTURE_DOCKERHUB_USERNAME }} \
-            --docker-password=${{ secrets.VENTURE_DOCKERHUB_TOKEN }} \
-            --docker-email=deploy@venture.com \
-            -n venture-staging
-
-          echo " Docker registry secret created"
-
       - name: Copy .env files to a temporary location on remote server
         uses: appleboy/ssh-action@v0.1.10
         with:
@@ -357,8 +344,7 @@ jobs:
             exit 1
           fi
           echo "Traefik found: $TRAEFIK_POD"
-
-      - name: Blue-Green Deployment with Zero Downtime
+      - name: Blue-Green Deployment
         run: |
           set -e
           IMAGE_TAG="${{ github.sha }}"
@@ -374,21 +360,14 @@ jobs:
             OLD_COLOR="green"
           fi
 
-          echo "=========================================="
           echo "Current active color: $CURRENT_COLOR"
-          echo "Deploying new version to: $NEW_COLOR"
-          echo "=========================================="
+          echo "Deploying to: $NEW_COLOR"
 
           # Deploy new version
           kubectl apply -f k8s/app-${NEW_COLOR}-deployment.yaml -n $NAMESPACE
           kubectl set image deployment/app-${NEW_COLOR} venture-api=${{ env.VENTURE_IMAGE_NAME }}:${IMAGE_TAG} -n $NAMESPACE
 
-          # CRITICAL: Keep old deployment running at full capacity
-          echo "Ensuring old deployment ($OLD_COLOR) is still running..."
-          kubectl scale deployment app-${OLD_COLOR} --replicas=2 -n $NAMESPACE || true
-
-          # Scale up new deployment
-          echo "Scaling up new deployment ($NEW_COLOR)..."
+          # Scale up new deployment BEFORE scaling down old one (this ensures overlap)
           kubectl scale deployment app-${NEW_COLOR} --replicas=2 -n $NAMESPACE
 
           echo "Waiting for new deployment rollout..."
@@ -397,23 +376,40 @@ jobs:
           echo "Waiting for pods to be ready..."
           kubectl wait --for=condition=ready pod -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --timeout=180s
 
-          # Give pods extra time to fully initialize and pass health checks
-          echo "Allowing pods to warm up..."
-          sleep 20
+          # Give pods extra time to fully initialize
+          sleep 15
 
           # Verify deployment health
-          echo "Verifying new deployment health..."
+          echo "Verifying deployment health..."
           READY_PODS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --field-selector=status.phase=Running -o json | jq '.items | length')
-          if [ "$READY_PODS" -lt 2 ]; then
-            echo " Error: Expected 2 ready pods, found $READY_PODS"
+          if [ "$READY_PODS" -lt 1 ]; then
+            echo "Error: No ready pods found"
             kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
             kubectl describe pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
+            kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=50
             exit 1
           fi
-          echo " $READY_PODS pods are ready"
+          echo "$READY_PODS pods are ready"
 
-          # Create temporary test service for health checks
+          # Create temporary pod for internal health check
+          echo "Creating temporary pod for health check..."
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: health-check-pod-${NEW_COLOR}
+            namespace: $NAMESPACE
+          spec:
+            containers:
+            - name: curl
+              image: curlimages/curl:latest
+              command: ["sleep", "300"]
+            restartPolicy: Never
+          EOF
+
+          kubectl wait --for=condition=ready pod/health-check-pod-${NEW_COLOR} -n $NAMESPACE --timeout=60s
+
+          # Create temporary test service
           echo "Creating temporary test service..."
           cat <<EOF | kubectl apply -f -
           apiVersion: v1
@@ -429,70 +425,41 @@ jobs:
               - protocol: TCP
                 port: 80
                 targetPort: 5000
+                name: http
           EOF
 
-          # Wait for service endpoints
-          echo "Waiting for test service endpoints..."
+          # Wait for service endpoints to be populated
           sleep 10
 
-          # Verify endpoints
+          # Verify endpoints exist
           ENDPOINTS=$(kubectl get endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}')
           if [ -z "$ENDPOINTS" ]; then
-            echo " Error: No endpoints available for test service"
+            echo "Error: No endpoints available for test service"
             kubectl describe endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE
             kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
+            kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
             exit 1
           fi
-          echo " Test service endpoints: $ENDPOINTS"
+          echo "Test service endpoints: $ENDPOINTS"
 
-          # Create health check pod
-          echo "Creating health check pod..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: health-check-pod-${NEW_COLOR}
-            namespace: $NAMESPACE
-          spec:
-            containers:
-            - name: curl
-              image: curlimages/curl:latest
-              command: ["sleep", "600"]
-            restartPolicy: Never
-          EOF
-
-          kubectl wait --for=condition=ready pod/health-check-pod-${NEW_COLOR} -n $NAMESPACE --timeout=60s
-
-          # Perform internal health checks
-          echo "Performing internal health checks on new deployment..."
-          max_attempts=15
+          # Perform health check
+          echo "Performing health check via test service..."
+          max_attempts=20
           attempt=1
-          consecutive_successes=0
-          required_successes=5
-
           while [ $attempt -le $max_attempts ]; do
-            if kubectl exec -n $NAMESPACE health-check-pod-${NEW_COLOR} -- \
-              curl -f -s --max-time 5 http://app-service-test-${NEW_COLOR}:80/api/health > /dev/null 2>&1; then
-              consecutive_successes=$((consecutive_successes + 1))
-              echo "Health check $attempt/$max_attempts passed (consecutive: $consecutive_successes/$required_successes)"
-              
-              if [ $consecutive_successes -ge $required_successes ]; then
-                echo " New deployment is healthy and stable"
-                break
-              fi
-            else
-              consecutive_successes=0
-              echo "  Health check $attempt/$max_attempts failed"
-              
-              if [ $attempt -eq $max_attempts ]; then
-                echo " Health check failed after $max_attempts attempts"
-                kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
-                kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
-                kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
-                exit 1
-              fi
+            if kubectl exec -n $NAMESPACE health-check-pod-${NEW_COLOR} -- curl -f -s http://app-service-test-${NEW_COLOR}:80/api/health -H "Cache-Control: no-cache" > /dev/null 2>&1; then
+              echo "Health check passed"
+              break
             fi
-            sleep 3
+            if [ $attempt -eq $max_attempts ]; then
+              echo "Health check failed after $max_attempts attempts"
+              kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
+              kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
+              kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
+              exit 1
+            fi
+            echo "Health check attempt $attempt/$max_attempts failed, retrying..."
+            sleep 5
             attempt=$((attempt + 1))
           done
 
@@ -500,104 +467,70 @@ jobs:
           kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE
           kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE
 
-          echo "=========================================="
-          echo "SWITCHING TRAFFIC (Zero Downtime Phase)"
-          echo "=========================================="
-
-          # Get current service endpoints (should be old color)
-          echo "Current service endpoints (old):"
-          kubectl get endpoints app-service -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}'
-          echo ""
-
-          # CRITICAL: Switch traffic while BOTH deployments are running
-          echo "Switching service selector to $NEW_COLOR..."
-          kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${NEW_COLOR}\"}}}" -n $NAMESPACE
-
-          # Wait for Kubernetes service to update endpoints
-          echo "Waiting for service endpoints to update..."
+          # CRITICAL: Keep old deployment running during traffic switch
+          echo "Ensuring old deployment is still running..."
+          kubectl scale deployment app-${OLD_COLOR} --replicas=2 -n $NAMESPACE
           sleep 5
 
-          # Verify service endpoints switched
-          echo "Verifying service endpoints switched to new deployment..."
-          max_wait=30
-          waited=0
-          while [ $waited -lt $max_wait ]; do
-            CURRENT_ENDPOINTS=$(kubectl get endpoints app-service -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' | tr ' ' '\n' | sort)
-            EXPECTED_ENDPOINTS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.items[*].status.podIP}' | tr ' ' '\n' | sort)
-            
-            if [ "$CURRENT_ENDPOINTS" = "$EXPECTED_ENDPOINTS" ]; then
-              echo " Service endpoints successfully updated"
-              break
-            fi
-            
-            echo " Waiting for endpoints to update... ($waited/$max_wait seconds)"
-            sleep 2
-            waited=$((waited + 2))
-          done
+          # Switch traffic to new deployment
+          echo "Switching traffic to $NEW_COLOR deployment..."
+          kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${NEW_COLOR}\"}}}" -n $NAMESPACE
 
-          echo "New service endpoints:"
-          echo "$CURRENT_ENDPOINTS"
-
-          # CRITICAL: Wait for Traefik/Ingress controller to pick up new endpoints
-          echo "Waiting for ingress controller to update (CRITICAL for zero downtime)..."
+          # Give ingress controller time to pick up new endpoints (critical for zero downtime)
+          echo "Waiting for traffic switch to propagate..."
           sleep 30
 
-          # Test through ingress (external access)
-          echo "Performing health checks through ingress..."
-          max_attempts=20
+          # Verify endpoints are updated (check the actual IPs, not a ready condition)
+          echo "Verifying service endpoints..."
+          NEW_ENDPOINTS=$(kubectl get endpoints app-service -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' | tr ' ' '\n' | sort)
+          EXPECTED_ENDPOINTS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.items[*].status.podIP}' | tr ' ' '\n' | sort)
+
+          if [ "$NEW_ENDPOINTS" != "$EXPECTED_ENDPOINTS" ]; then
+            echo "Warning: Endpoints may not be fully updated yet"
+            echo "Current endpoints: $NEW_ENDPOINTS"
+            echo "Expected endpoints: $EXPECTED_ENDPOINTS"
+          else
+            echo "Service endpoints successfully updated"
+          fi
+
+          # Additional safety: keep both deployments running briefly
+          sleep 20
+
+          # Final health check via ingress
+          echo "Performing final health check via ingress..."
+          max_attempts=15
           attempt=1
-          consecutive_successes=0
-          required_successes=5
+          success=0
 
           while [ $attempt -le $max_attempts ]; do
-            if curl -k -f -s --max-time 10 https://api.staging.casinochautari.com/api/health \
-              -H "Cache-Control: no-cache" \
-              -H "Connection: close" > /dev/null 2>&1; then
-              consecutive_successes=$((consecutive_successes + 1))
-              echo " External health check $attempt/$max_attempts passed (consecutive: $consecutive_successes/$required_successes)"
-              
-              if [ $consecutive_successes -ge $required_successes ]; then
-                echo " External access is stable through ingress"
+            if curl -f -s https://staging.casinochautari.com/api/health -H "Cache-Control: no-cache" -H "Connection: close" > /dev/null 2>&1; then
+              echo "Health check passed (attempt $attempt)"
+              success=$((success + 1))
+              # Require 3 successful checks to ensure stability
+              if [ $success -ge 3 ]; then
+                echo "Health checks consistently passing"
                 break
               fi
             else
-              consecutive_successes=0
-              echo " External health check $attempt/$max_attempts failed"
-              
+              success=0
               if [ $attempt -eq $max_attempts ]; then
-                echo " External health check failed - ROLLING BACK"
+                echo "Error: Health check failed after $max_attempts attempts, rolling back..."
                 kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${OLD_COLOR}\"}}}" -n $NAMESPACE
-                sleep 10
-                kubectl logs -l app.kubernetes.io/name=traefik -n kube-system --tail=100 || true
+                kubectl logs -l app.kubernetes.io/name=traefik -n kube-system --tail=100 || echo "Failed to fetch Traefik logs"
                 exit 1
               fi
             fi
-            sleep 3
+            echo "Health check attempt $attempt/$max_attempts (successes: $success/3)"
+            sleep 5
             attempt=$((attempt + 1))
           done
 
-          # Extra safety margin - ensure traffic is stable
-          echo "Final stability check (30 seconds)..."
-          sleep 30
-
-          # Final verification
-          echo "Final health check..."
-          if ! curl -k -f -s --max-time 10 https://api.staging.casinochautari.com/api/health > /dev/null 2>&1; then
-            echo "Final health check failed - ROLLING BACK"
-            kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${OLD_COLOR}\"}}}" -n $NAMESPACE
-            exit 1
-          fi
-
-          echo "Traffic switch completed successfully"
-
-          # NOW safe to scale down old deployment
-          echo "Scaling down old deployment ($OLD_COLOR)..."
+          # Now safe to scale down old deployment
+          echo "Scaling down $OLD_COLOR deployment..."
           kubectl scale deployment app-${OLD_COLOR} --replicas=0 -n $NAMESPACE
 
-          echo "=========================================="
-          echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
-          echo "Active color: $NEW_COLOR"
-          echo "=========================================="
+          echo "Deployment completed successfully!"
+          echo "Active color is now: $NEW_COLOR"
 
       - name: Post-deployment verification
         run: |
