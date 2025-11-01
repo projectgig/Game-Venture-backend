@@ -8,7 +8,7 @@ metadata:
     color: blue
     environment: staging
 spec:
-  replicas: 0 # Will be scaled by CI/CD
+  replicas: 0
   strategy:
     type: RollingUpdate
     rollingUpdate:

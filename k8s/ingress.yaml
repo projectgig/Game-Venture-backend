@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: venture-api-ingress
+  name: venture-ingress
   namespace: venture-staging
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
