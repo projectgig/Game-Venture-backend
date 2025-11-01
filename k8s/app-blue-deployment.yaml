@@ -25,6 +25,8 @@ spec:
         color: blue
         environment: staging
     spec:
+      imagePullSecrets:
+        - name: dockerhub-secret
       containers:
         - name: venture-api
           image: gigproject/venture-api:latest
@@ -41,20 +43,12 @@ spec:
           envFrom:
             - secretRef:
                 name: venture-env-secrets
-          resources:
-            requests:
-              cpu: "200m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-          # Increased delays to ensure app is fully ready
           livenessProbe:
             httpGet:
               path: /api/health
               port: 5000
               scheme: HTTP
-            initialDelaySeconds: 45 # Increased from 30
+            initialDelaySeconds: 45
             periodSeconds: 15
             timeoutSeconds: 5
             successThreshold: 1
@@ -64,12 +58,18 @@ spec:
               path: /api/health
               port: 5000
               scheme: HTTP
-            initialDelaySeconds: 20 # Increased from 15
+            initialDelaySeconds: 20
             periodSeconds: 10
-            timeoutSeconds: 5 # Increased from 3
-            successThreshold: 2 # Require 2 successful checks
+            timeoutSeconds: 5
+            successThreshold: 2
             failureThreshold: 3
-          # Graceful shutdown
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
           lifecycle:
             preStop:
               exec:
