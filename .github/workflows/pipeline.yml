@@ -236,38 +236,38 @@ jobs:
         run: |
           kubectl create namespace venture-dev --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Create venture-env-secrets
-        run: |
-          ENV_FILE=".env.development"
-          [ ! -f "$ENV_FILE" ] && ENV_FILE=".env.production"
-          [ ! -f "$ENV_FILE" ] && echo "No .env file found!" && exit 1
+      # - name: Create venture-env-secrets
+      #   run: |
+      #     ENV_FILE=".env.development"
+      #     [ ! -f "$ENV_FILE" ] && ENV_FILE=".env.production"
+      #     [ ! -f "$ENV_FILE" ] && echo "No .env file found!" && exit 1
 
-          echo "Using $ENV_FILE"
+      #     echo "Using $ENV_FILE"
 
-          # Remove duplicate keys, keeping the last occurrence
-          awk -F= '!seen[$1]++' "$ENV_FILE" | tac | awk -F= '!seen[$1]++' | tac > "${ENV_FILE}.deduped"
+      #     # Remove duplicate keys, keeping the last occurrence
+      #     awk -F= '!seen[$1]++' "$ENV_FILE" | tac | awk -F= '!seen[$1]++' | tac > "${ENV_FILE}.deduped"
 
-          echo "Deduplicated .env file:"
-          cat "${ENV_FILE}.deduped"
+      #     echo "Deduplicated .env file:"
+      #     cat "${ENV_FILE}.deduped"
 
-          # Delete existing secret
-          kubectl delete secret venture-env-secrets \
-            -n venture-staging \
-            --ignore-not-found=true
+      #     # Delete existing secret
+      #     kubectl delete secret venture-env-secrets \
+      #       -n venture-staging \
+      #       --ignore-not-found=true
 
-          sleep 2
+      #     sleep 2
 
-          # Create new secret from deduplicated file
-          kubectl create secret generic venture-env-secrets \
-            --namespace=venture-staging \
-            --from-env-file="${ENV_FILE}.deduped"
+      #     # Create new secret from deduplicated file
+      #     kubectl create secret generic venture-env-secrets \
+      #       --namespace=venture-staging \
+      #       --from-env-file="${ENV_FILE}.deduped"
 
-          # Override Redis URL
-          kubectl patch secret venture-env-secrets -n venture-staging \
-            --type='json' \
-            -p='[{"op": "replace", "path": "/data/REDIS_URL", "value": "'"$(echo -n 'redis://venture-redis:6379' | base64)"'"}]'
+      #     # Override Redis URL
+      #     kubectl patch secret venture-env-secrets -n venture-staging \
+      #       --type='json' \
+      #       -p='[{"op": "replace", "path": "/data/REDIS_URL", "value": "'"$(echo -n 'redis://venture-redis:6379' | base64)"'"}]'
 
-          echo "Secret created successfully!"
+      #     echo "Secret created successfully!"
 
       - name: Redis PVC Backup, Resize & Restore
         run: |
