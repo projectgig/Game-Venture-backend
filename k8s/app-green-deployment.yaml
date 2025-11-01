@@ -25,10 +25,8 @@ spec:
         color: green
         environment: staging
     spec:
-      # ADD THIS - Docker registry credentials for pulling the image
       imagePullSecrets:
         - name: dockerhub-secret
-
       containers:
         - name: venture-api
           image: gigproject/venture-api:latest
@@ -52,26 +50,25 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-          # Liveness probe to check if the container is healthy
           livenessProbe:
-          httpGet:
-            path: /api/health
-            port: 5000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-          # Readiness probe to check if the container is ready
+            httpGet:
+              path: /api/health
+              port: 5000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /api/health
               port: 5000
+              scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
-            successThreshold: 2 #  Require 2 successful checks
+            successThreshold: 2
             failureThreshold: 3
-          # Graceful shutdown
           lifecycle:
             preStop:
               exec:
