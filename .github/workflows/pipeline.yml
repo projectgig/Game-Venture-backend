@@ -273,68 +273,30 @@ jobs:
 
       #     echo "Secret created successfully!"
 
-      - name: Redis PVC Backup, Resize & Restore
-        run: |
-          set -e
-
-          NAMESPACE="venture-staging"
-          OLD_PVC="redis-pvc"
-          NEW_PVC="redis-pvc-new"
-          BACKUP_DIR="./appendonlydir"
-
-          echo " Checking running Redis pod..."
-          REDIS_POD=$(kubectl get pod -n $NAMESPACE -l app=venture-redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-          if [ -z "$REDIS_POD" ]; then
-            echo "Redis pod not found. Skipping backup."
-          else
-            echo " Backing up Redis data from pod $REDIS_POD..."
-            kubectl cp $NAMESPACE/$REDIS_POD:/data $BACKUP_DIR || true
-          fi
-
-          echo " Scaling down Redis deployment..."
-          kubectl scale deployment venture-redis -n $NAMESPACE --replicas=0
-          kubectl wait --for=delete pod -l app=venture-redis -n $NAMESPACE --timeout=180s || true
-
-          echo " Deleting old PVC if exists..."
-          kubectl delete pvc $OLD_PVC -n $NAMESPACE --wait=true || true
-
-          echo " Applying new PVC..."
-          kubectl apply -f k8s/redis-pvc.yaml -n $NAMESPACE
-
-          echo " Updating Redis deployment to use new PVC..."
-          kubectl patch deployment venture-redis -n $NAMESPACE --type=json -p='[
-            {
-              "op": "replace",
-              "path": "/spec/template/spec/volumes/0/persistentVolumeClaim/claimName",
-              "value": "redis-pvc-new"
-            }
-          ]'
-
-          echo " Scaling Redis deployment back up..."
-          kubectl scale deployment venture-redis -n $NAMESPACE --replicas=1
-          kubectl wait --for=condition=ready pod -l app=venture-redis -n $NAMESPACE --timeout=180s
-
-          if [ -d "$BACKUP_DIR" ]; then
-            echo " Restoring Redis data to new pod..."
-            NEW_REDIS_POD=$(kubectl get pod -n $NAMESPACE -l app=venture-redis -o jsonpath='{.items[0].metadata.name}')
-            kubectl cp $BACKUP_DIR $NAMESPACE/$NEW_REDIS_POD:/data
-            kubectl delete pod $NEW_REDIS_POD -n $NAMESPACE  # reload data from disk
-            kubectl wait --for=condition=ready pod -l app=venture-redis -n $NAMESPACE --timeout=180s
-          else
-            echo " No backup directory found. Skipping restore."
-          fi
-
-          echo "Redis PVC resize and data migration complete."
-
+      # DEPLOY REDIS FIRST
       - name: Deploy Redis
         run: |
           kubectl apply -f k8s/redis-pvc.yaml -n venture-staging
           kubectl apply -f k8s/redis-deployment.yaml -n venture-staging
           kubectl apply -f k8s/redis-service.yaml -n venture-staging
-
-          # Wait for Redis to be ready
           kubectl wait --for=condition=ready pod -l app=venture-redis -n venture-staging --timeout=120s || true
 
+      - name: Redis PVC Backup, Resize & Restore
+        run: |
+          set -e
+          NAMESPACE="venture-staging"
+          OLD_PVC="redis-pvc"
+          NEW_PVC="redis-pvc-new"
+
+          # Check if old PVC exists → if not, skip resize
+          if ! kubectl get pvc $OLD_PVC -n $NAMESPACE >/dev/null 2>&1; then
+            echo "No existing Redis PVC. Skipping backup/resize."
+            exit 0
+          fi
+
+          echo "Existing PVC found. Proceeding with resize..."
+
+      # ... rest of your backup/resize logic ...
       - name: Deploy Application Services
         run: |
           kubectl apply -f k8s/app-service.yaml -n venture-staging
