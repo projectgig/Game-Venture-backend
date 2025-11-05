@@ -16,7 +16,7 @@ router.get("/health", async (req, res) => {
 
     res.status(health.database && health.redis ? 200 : 503).json({
       status: health.database && health.redis ? "healthy" : "unhealthy",
-      // timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
       // ...health,
     });
   } catch (error) {

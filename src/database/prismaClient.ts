@@ -528,15 +528,16 @@ const db = {
   findUnique: <T>(
     model: string,
     args: any,
-    options?: { ttl?: number; useCache?: boolean }
-  ): Promise<T | null> =>
-    cachedQuery(
+    options: { ttl?: number; useCache?: boolean } = {}
+  ): Promise<T | null> => {
+    return cachedQuery(
       model,
       "findUnique",
       args,
       () => (prisma as any)[model].findUnique(args),
       options
-    ),
+    );
+  },
 
   findFirst: <T>(
     model: string,

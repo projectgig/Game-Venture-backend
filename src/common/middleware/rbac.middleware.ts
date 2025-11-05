@@ -1,13 +1,15 @@
 import { Response, NextFunction } from "express";
-import { AuthRequest } from "./auth.middleware";
 import { Company, Role } from "@prisma/client";
 import { db } from "@game/database/prismaClient";
+import { AuthRequest } from "./auth.middleware";
 
 /**
  * Require one of the allowed roles
  */
+
+
 export const requireRole = (...allowedRoles: Role[]) => {
-  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+  return async (req: any, res: Response, next: NextFunction) => {
     try {
       const company = req.user;
       if (!company) {
@@ -34,7 +36,7 @@ export const requireRole = (...allowedRoles: Role[]) => {
  * Require that the requester is the **parent/creator** of the target user (by param)
  */
 export const requireCreatorOfParam = (paramName: string) => {
-  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+  return async (req: any, res: Response, next: NextFunction) => {
     try {
       const company = req.user;
       if (!company) {

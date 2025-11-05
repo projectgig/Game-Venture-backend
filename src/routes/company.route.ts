@@ -6,8 +6,19 @@ import {
   updateUser,
   changePassword,
   toggleUserStatus,
+} from "../controllers/company/company.controller";
+import {
   getDownlineDashboard,
-} from "../controllers/company.controller";
+  getAdminDashboard,
+  getDistributorDashboard,
+  getSubDistributorDashboard,
+  getStoreDashboard,
+  exportDashboardData,
+  getDashboardUpdates,
+  getUserDetailedStats,
+  getComparativeAnalysis,
+} from "../controllers/company/company.analysis";
+
 import { authenticateToken } from "../common/middleware/auth.middleware";
 import {
   requireRole,
@@ -141,10 +152,47 @@ router.get(
  * /api/company/downline/dashboard:
  *   get:
  *     summary: Get downline dashboard statistics
- *     description: Retrieve comprehensive analytics and statistics for all users in the downline hierarchy including registrations, activity, points, and role breakdowns
+ *     description: Retrieve comprehensive analytics for the user's downline, including overview, hierarchy, financial, game, activity, and other metrics. Data is filtered by role hierarchy, ensuring only lower-level roles are included.
  *     tags: [Company]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start date for filtering data (e.g., '2025-01-01T00:00:00Z')
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End date for filtering data (e.g., '2025-12-31T23:59:59Z')
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [ADMIN, DISTRIBUTOR, SUB_DISTRIBUTOR, STORE, PLAYER]
+ *         description: Filter by role (must be lower than the user's role)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, BLOCK]
+ *         description: Filter by user status
+ *       - in: query
+ *         name: gameType
+ *         schema:
+ *           type: string
+ *         description: Filter by game type
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 1y]
+ *           default: 30d
+ *         description: Predefined date range for filtering (e.g., '7d' for last 7 days)
  *     responses:
  *       200:
  *         description: Dashboard data fetched successfully
@@ -156,115 +204,86 @@ router.get(
  *                 data:
  *                   type: object
  *                   properties:
+ *                     period:
+ *                       type: object
+ *                       properties:
+ *                         startDate:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                         endDate:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-31T23:59:59Z"
+ *                         label:
+ *                           type: string
+ *                           example: "30d"
+ *                     currentUser:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "user123"
+ *                         username:
+ *                           type: string
+ *                           example: "admin_user"
+ *                         role:
+ *                           type: string
+ *                           enum: [ADMIN, DISTRIBUTOR, SUB_DISTRIBUTOR, STORE, PLAYER]
+ *                           example: "ADMIN"
+ *                         points:
+ *                           type: number
+ *                           example: 1000
+ *                         status:
+ *                           type: string
+ *                           enum: [ACTIVE, BLOCK]
+ *                           example: "ACTIVE"
  *                     overview:
  *                       type: object
  *                       properties:
  *                         totalDownline:
  *                           type: integer
- *                           example: 111
- *                         totalPlayers:
- *                           type: integer
  *                           example: 100
- *                         totalAgents:
- *                           type: integer
- *                           example: 11
  *                         activeUsers:
  *                           type: integer
- *                           example: 95
+ *                           example: 80
  *                         inactiveUsers:
  *                           type: integer
- *                           example: 16
- *                         usersWithRechargePermission:
- *                           type: integer
- *                           example: 50
- *                         usersWithWithdrawPermission:
- *                           type: integer
- *                           example: 45
- *                         protectedAgents:
- *                           type: integer
- *                           example: 8
- *                     registrations:
- *                       type: object
- *                       properties:
- *                         today:
- *                           type: integer
- *                           example: 5
- *                         yesterday:
- *                           type: integer
- *                           example: 3
- *                         last7Days:
- *                           type: integer
  *                           example: 20
- *                         last30Days:
- *                           type: integer
- *                           example: 45
- *                         thisMonth:
- *                           type: integer
- *                           example: 35
- *                     activity:
- *                       type: object
- *                       properties:
- *                         activeToday:
- *                           type: integer
- *                           example: 50
- *                         activeYesterday:
- *                           type: integer
- *                           example: 48
- *                         activeLast7Days:
- *                           type: integer
- *                           example: 80
- *                         activeLast30Days:
- *                           type: integer
- *                           example: 95
- *                         neverLoggedIn:
+ *                         totalBalance:
+ *                           type: number
+ *                           example: 50000
+ *                         totalBets:
+ *                           type: object
+ *                           properties:
+ *                             amount:
+ *                               type: number
+ *                               example: 100000
+ *                             count:
+ *                               type: integer
+ *                               example: 500
+ *                         totalWins:
+ *                           type: object
+ *                           properties:
+ *                             amount:
+ *                               type: number
+ *                               example: 80000
+ *                             count:
+ *                               type: integer
+ *                               example: 300
+ *                         netRevenue:
+ *                           type: number
+ *                           example: 20000
+ *                         totalCommissions:
+ *                           type: number
+ *                           example: 5000
+ *                         newUsers:
  *                           type: integer
  *                           example: 10
- *                     userActivity:
- *                       type: object
- *                       properties:
- *                         totalActivities:
- *                           type: integer
- *                           example: 5000
- *                         activitiesToday:
- *                           type: integer
- *                           example: 150
- *                         activitiesYesterday:
- *                           type: integer
- *                           example: 120
- *                         activitiesLast7Days:
- *                           type: integer
- *                           example: 800
- *                         activitiesLast30Days:
- *                           type: integer
- *                           example: 3000
- *                         activitiesThisMonth:
- *                           type: integer
- *                           example: 2500
- *                         uniqueDevicesToday:
- *                           type: integer
- *                           example: 45
- *                         uniqueIPsToday:
- *                           type: integer
- *                           example: 42
- *                     points:
- *                       type: object
- *                       properties:
- *                         totalPoints:
- *                           type: integer
- *                           example: 125000
- *                         averagePoints:
- *                           type: integer
- *                           example: 1126
- *                         maxPoints:
- *                           type: integer
- *                           example: 50000
- *                         minPoints:
- *                           type: integer
- *                           example: 0
- *                         usersWithPoints:
- *                           type: integer
- *                           example: 85
- *                     roleBreakdown:
+ *                         houseEdge:
+ *                           type: string
+ *                           example: "20.00"
+ *                     hierarchy:
  *                       type: array
  *                       items:
  *                         type: object
@@ -274,27 +293,569 @@ router.get(
  *                             example: "PLAYER"
  *                           count:
  *                             type: integer
- *                             example: 100
- *                           percentage:
- *                             type: string
- *                             example: "90.09"
- *                     statusBreakdown:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           status:
- *                             type: string
- *                             example: "ACTIVE"
- *                           isActive:
- *                             type: boolean
- *                             example: true
- *                           count:
+ *                             example: 50
+ *                           totalBalance:
+ *                             type: number
+ *                             example: 25000
+ *                           totalChildren:
  *                             type: integer
- *                             example: 95
- *                           percentage:
- *                             type: string
- *                             example: "85.59"
+ *                             example: 10
+ *                           users:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 id:
+ *                                   type: string
+ *                                   example: "user456"
+ *                                 username:
+ *                                   type: string
+ *                                   example: "player1"
+ *                                 status:
+ *                                   type: string
+ *                                   example: "ACTIVE"
+ *                                 balance:
+ *                                   type: number
+ *                                   example: 500
+ *                                 childrenCount:
+ *                                   type: integer
+ *                                   example: 0
+ *                                 createdAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                                   example: "2025-01-01T00:00:00Z"
+ *                     financial:
+ *                       type: object
+ *                       properties:
+ *                         summary:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: object
+ *                             properties:
+ *                               total:
+ *                                 type: number
+ *                                 example: 10000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 50
+ *                         recentTransactions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "trans123"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               type:
+ *                                 type: string
+ *                                 example: "RECHARGE"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 100
+ *                               remark:
+ *                                 type: string
+ *                                 example: "Deposit"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                         adjustments:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "adj123"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 50
+ *                               remark:
+ *                                 type: string
+ *                                 example: "Bonus"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     games:
+ *                       type: object
+ *                       properties:
+ *                         byGameType:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               totalGames:
+ *                                 type: integer
+ *                                 example: 100
+ *                               totalBets:
+ *                                 type: number
+ *                                 example: 10000
+ *                               totalWins:
+ *                                 type: number
+ *                                 example: 8000
+ *                               netRevenue:
+ *                                 type: number
+ *                                 example: 2000
+ *                         byResult:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               count:
+ *                                 type: integer
+ *                                 example: 50
+ *                               totalBets:
+ *                                 type: number
+ *                                 example: 5000
+ *                               totalWins:
+ *                                 type: number
+ *                                 example: 4000
+ *                         recentGames:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "game123"
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               player:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               playerRole:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               store:
+ *                                 type: string
+ *                                 example: "store1"
+ *                               betAmount:
+ *                                 type: number
+ *                                 example: 100
+ *                               winAmount:
+ *                                 type: number
+ *                                 example: 200
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               playedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     activity:
+ *                       type: object
+ *                       properties:
+ *                         totalActivities:
+ *                           type: integer
+ *                           example: 1000
+ *                         userActivities:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               activityCount:
+ *                                 type: integer
+ *                                 example: 50
+ *                             deviceBreakdown:
+ *                               type: object
+ *                               additionalProperties:
+ *                                 type: integer
+ *                                 example: 100
+ *                             locationBreakdown:
+ *                               type: object
+ *                               additionalProperties:
+ *                                 type: integer
+ *                                 example: 50
+ *                     topPerformers:
+ *                       type: object
+ *                       properties:
+ *                         topByBets:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _sum:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                     example: 10000
+ *                         topByWins:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _sum:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                     example: 8000
+ *                         topByCommissions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _sum:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                     example: 2000
+ *                         mostActiveGaming:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               playerId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _count:
+ *                                 type: integer
+ *                                 example: 100
+ *                     wallet:
+ *                       type: object
+ *                       properties:
+ *                         totalBalance:
+ *                           type: number
+ *                           example: 50000
+ *                         avgBalance:
+ *                           type: number
+ *                           example: 500
+ *                         walletCount:
+ *                           type: integer
+ *                           example: 100
+ *                         lowBalanceUsers:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               status:
+ *                                 type: string
+ *                                 example: "ACTIVE"
+ *                               balance:
+ *                                 type: number
+ *                                 example: 50
+ *                         highBalanceUsers:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               balance:
+ *                                 type: number
+ *                                 example: 15000
+ *                     trends:
+ *                       type: object
+ *                       properties:
+ *                         daily:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               date:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2025-01-01"
+ *                               active_players:
+ *                                 type: integer
+ *                                 example: 50
+ *                               total_bets:
+ *                                 type: number
+ *                                 example: 10000
+ *                               total_wins:
+ *                                 type: number
+ *                                 example: 8000
+ *                               total_commissions:
+ *                                 type: number
+ *                                 example: 2000
+ *                               bet_count:
+ *                                 type: integer
+ *                                 example: 100
+ *                         hourly:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               hour:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                               transaction_count:
+ *                                 type: integer
+ *                                 example: 50
+ *                               bets:
+ *                                 type: number
+ *                                 example: 5000
+ *                               wins:
+ *                                 type: number
+ *                                 example: 4000
+ *                     commissions:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: number
+ *                           example: 5000
+ *                         count:
+ *                           type: integer
+ *                           example: 100
+ *                         byRole:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               total:
+ *                                 type: number
+ *                                 example: 2000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 50
+ *                         topEarners:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 1000
+ *                     risk:
+ *                       type: object
+ *                       properties:
+ *                         suspiciousActivity:
+ *                           type: integer
+ *                           example: 5
+ *                         multiAccountSuspects:
+ *                           type: integer
+ *                           example: 3
+ *                         blockedUsers:
+ *                           type: integer
+ *                           example: 2
+ *                         details:
+ *                           type: object
+ *                           properties:
+ *                             suspicious:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   player_id:
+ *                                     type: string
+ *                                     example: "user456"
+ *                                   game_count:
+ *                                     type: integer
+ *                                     example: 100
+ *                                   avg_bet:
+ *                                     type: number
+ *                                     example: 50
+ *                                   max_bet:
+ *                                     type: number
+ *                                     example: 1000
+ *                                   win_rate:
+ *                                     type: number
+ *                                     example: 0.75
+ *                             multiAccount:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   ip:
+ *                                     type: string
+ *                                     example: "192.168.1.1"
+ *                                   _count:
+ *                                     type: object
+ *                                     properties:
+ *                                       companyId:
+ *                                         type: integer
+ *                                         example: 2
+ *                             blocked:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: string
+ *                                     example: "user789"
+ *                                   username:
+ *                                     type: string
+ *                                     example: "blocked_user"
+ *                                   role:
+ *                                     type: string
+ *                                     example: "PLAYER"
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                                     example: "2025-01-01T00:00:00Z"
+ *                     realTime:
+ *                       type: object
+ *                       properties:
+ *                         activeGamesLast5Min:
+ *                           type: integer
+ *                           example: 10
+ *                         onlineUsers:
+ *                           type: integer
+ *                           example: 50
+ *                         recentGames:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "game123"
+ *                               player:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               betAmount:
+ *                                 type: number
+ *                                 example: 100
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               playedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                         recentTransactions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "trans123"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               type:
+ *                                 type: string
+ *                                 example: "RECHARGE"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 100
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     downlineTree:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "user123"
+ *                         username:
+ *                           type: string
+ *                           example: "admin_user"
+ *                         role:
+ *                           type: string
+ *                           example: "ADMIN"
+ *                         status:
+ *                           type: string
+ *                           example: "ACTIVE"
+ *                         balance:
+ *                           type: number
+ *                           example: 1000
+ *                         points:
+ *                           type: number
+ *                           example: 1000
+ *                         childrenCount:
+ *                           type: integer
+ *                           example: 10
+ *                         gamesPlayed:
+ *                           type: integer
+ *                           example: 50
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                         children:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/DownlineTree'
+ *                     filters:
+ *                       type: object
+ *                       properties:
+ *                         role:
+ *                           type: string
+ *                           example: "PLAYER"
+ *                         status:
+ *                           type: string
+ *                           example: "ACTIVE"
+ *                         gameType:
+ *                           type: string
+ *                           example: "SLOTS"
  *                 message:
  *                   type: string
  *                   example: "Dashboard data fetched successfully"
@@ -305,9 +866,29 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 error:
  *                   type: string
  *                   example: "Unauthorized"
+ *       403:
+ *         description: Forbidden (e.g., invalid role filter or role hierarchy violation)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Cannot filter by equal or higher role"
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "User not found"
  *       500:
  *         description: Internal server error
  *         content:
@@ -315,15 +896,14 @@ router.get(
  *             schema:
  *               type: object
  *               properties:
- *                 message:
+ *                 error:
  *                   type: string
- *                   example: "Internal server error"
+ *                   example: "Failed to fetch dashboard data"
  */
 router.get(
   "/downline/dashboard",
   authenticateToken,
-  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
-  getDownlineDashboard
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE")
 );
 
 /**
@@ -523,5 +1103,2224 @@ router.patch(
  *         description: Unauthorized or invalid old password
  */
 router.post("/change-password", authenticateToken, changePassword);
+
+/**
+ * @swagger
+ * /api/company/downline/dashboard:
+ *   get:
+ *     summary: Get downline dashboard statistics
+ *     description: Retrieve comprehensive analytics for the user's downline, including overview, hierarchy, financial, game, activity, and other metrics. Data is filtered by role hierarchy, ensuring only lower-level roles are included.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start date for filtering data (e.g., '2025-01-01T00:00:00Z')
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End date for filtering data (e.g., '2025-12-31T23:59:59Z')
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [ADMIN, DISTRIBUTOR, SUB_DISTRIBUTOR, STORE, PLAYER]
+ *         description: Filter by role (must be lower than the user's role)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, BLOCK]
+ *         description: Filter by user status
+ *       - in: query
+ *         name: gameType
+ *         schema:
+ *           type: string
+ *         description: Filter by game type
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 1y]
+ *           default: 30d
+ *         description: Predefined date range for filtering (e.g., '7d' for last 7 days)
+ *     responses:
+ *       200:
+ *         description: Dashboard data fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     period:
+ *                       type: object
+ *                       properties:
+ *                         startDate:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                         endDate:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-31T23:59:59Z"
+ *                         label:
+ *                           type: string
+ *                           example: "30d"
+ *                     currentUser:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "user123"
+ *                         username:
+ *                           type: string
+ *                           example: "admin_user"
+ *                         role:
+ *                           type: string
+ *                           enum: [ADMIN, DISTRIBUTOR, SUB_DISTRIBUTOR, STORE, PLAYER]
+ *                           example: "ADMIN"
+ *                         points:
+ *                           type: number
+ *                           example: 1000
+ *                         status:
+ *                           type: string
+ *                           enum: [ACTIVE, BLOCK]
+ *                           example: "ACTIVE"
+ *                     overview:
+ *                       type: object
+ Horton: 
+ *                         properties:
+ *                           totalDownline:
+ *                             type: integer
+ *                             example: 100
+ *                           activeUsers:
+ *                             type: integer
+ *                             example: 80
+ *                           inactiveUsers:
+ *                             type: integer
+ *                             example: 20
+ *                           totalBalance:
+ *                             type: number
+ *                             example: 50000
+ *                           totalBets:
+ *                             type: object
+ *                             properties:
+ *                               amount:
+ *                                 type: number
+ *                                 example: 100000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 500
+ *                           totalWins:
+ *                             type: object
+ *                             properties:
+ *                               amount:
+ *                                 type: number
+ *                                 example: 80000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 300
+ *                           netRevenue:
+ *                             type: number
+ *                             example: 20000
+ *                           totalCommissions:
+ *                             type: number
+ *                             example: 5000
+ *                           newUsers:
+ *                             type: integer
+ *                             example: 10
+ *                           houseEdge:
+ *                             type: string
+ *                             example: "20.00"
+ *                     hierarchy:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           role:
+ *                             type: string
+ *                             example: "PLAYER"
+ *                           count:
+ *                             type: integer
+ *                             example: 50
+ *                           totalBalance:
+ *                             type: number
+ *                             example: 25000
+ *                           totalChildren:
+ *                             type: integer
+ *                             example: 10
+ *                           users:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 id:
+ *                                   type: string
+ *                                   example: "user456"
+ *                                 username:
+ *                                   type: string
+ *                                   example: "player1"
+ *                                 status:
+ *                                   type: string
+ *                                   example: "ACTIVE"
+ *                                 balance:
+ *                                   type: number
+ *                                   example: 500
+ *                                 childrenCount:
+ *                                   type: integer
+ *                                   example: 0
+ *                                 createdAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                                   example: "2025-01-01T00:00:00Z"
+ *                     financial:
+ *                       type: object
+ *                       properties:
+ *                         summary:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: object
+ *                             properties:
+ *                               total:
+ *                                 type: number
+ *                                 example: 10000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 50
+ *                         recentTransactions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "trans123"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               type:
+ *                                 type: string
+ *                                 example: "RECHARGE"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 100
+ *                               remark:
+ *                                 type: string
+ *                                 example: "Deposit"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                         adjustments:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "adj123"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 50
+ *                               remark:
+ *                                 type: string
+ *                                 example: "Bonus"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     games:
+ *                       type: object
+ *                       properties:
+ *                         byGameType:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               totalGames:
+ *                                 type: integer
+ *                                 example: 100
+ *                               totalBets:
+ *                                 type: number
+ *                                 example: 10000
+ *                               totalWins:
+ *                                 type: number
+ *                                 example: 8000
+ *                               netRevenue:
+ *                                 type: number
+ *                                 example: 2000
+ *                         byResult:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               count:
+ *                                 type: integer
+ *                                 example: 50
+ *                               totalBets:
+ *                                 type: number
+ *                                 example: 5000
+ *                               totalWins:
+ *                                 type: number
+ *                                 example: 4000
+ *                         recentGames:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "game123"
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               player:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               playerRole:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               store:
+ *                                 type: string
+ *                                 example: "store1"
+ *                               betAmount:
+ *                                 type: number
+ *                                 example: 100
+ *                               winAmount:
+ *                                 type: number
+ *                                 example: 200
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               playedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     activity:
+ *                       type: object
+ *                       properties:
+ *                         totalActivities:
+ *                           type: integer
+ *                           example: 1000
+ *                         userActivities:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               activityCount:
+ *                                 type: integer
+ *                                 example: 50
+ *                         deviceBreakdown:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: integer
+ *                             example: 100
+ *                         locationBreakdown:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: integer
+ *                             example: 50
+ *                     topPerformers:
+ *                       type: object
+ *                       properties:
+ *                         topByBets:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _sum:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                     example: 10000
+ *                         topByWins:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _sum:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                     example: 8000
+ *                         topByCommissions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               companyId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _sum:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                     example: 2000
+ *                         mostActiveGaming:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               playerId:
+ *                                 type: string
+ *                                 example: "user456"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               _count:
+ *                                 type: integer
+ *                                 example: 100
+ *                     wallet:
+ *                       type: object
+ *                       properties:
+ *                         totalBalance:
+ *                           type: number
+ *                           example: 50000
+ *                         avgBalance:
+ *                           type: number
+ *                           example: 500
+ *                         walletCount:
+ *                           type: integer
+ *                           example: 100
+ *                         lowBalanceUsers:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               status:
+ *                                 type: string
+ *                                 example: "ACTIVE"
+ *                               balance:
+ *                                 type: number
+ *                                 example: 50
+ *                         highBalanceUsers:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               balance:
+ *                                 type: number
+ *                                 example: 15000
+ *                     trends:
+ *                       type: object
+ *                       properties:
+ *                         daily:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               date:
+ *                                 type: string
+ *                                 format: date
+ *                                 example: "2025-01-01"
+ *                               active_players:
+ *                                 type: integer
+ *                                 example: 50
+ *                               total_bets:
+ *                                 type: number
+ *                                 example: 10000
+ *                               total_wins:
+ *                                 type: number
+ *                                 example: 8000
+ *                               total_commissions:
+ *                                 type: number
+ *                                 example: 2000
+ *                               bet_count:
+ *                                 type: integer
+ *                                 example: 100
+ *                         hourly:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               hour:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                               transaction_count:
+ *                                 type: integer
+ *                                 example: 50
+ *                               bets:
+ *                                 type: number
+ *                                 example: 5000
+ *                               wins:
+ *                                 type: number
+ *                                 example: 4000
+ *                     commissions:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: number
+ *                           example: 5000
+ *                         count:
+ *                           type: integer
+ *                           example: 100
+ *                         byRole:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               role:
+ *                                 type: string
+ *                                 example: "PLAYER"
+ *                               total:
+ *                                 type: number
+ *                                 example: 2000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 50
+ *                         topEarners:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 1000
+ *                     risk:
+ *                       type: object
+ *                       properties:
+ *                         suspiciousActivity:
+ *                           type: integer
+ *                           example: 5
+ *                         multiAccountSuspects:
+ *                           type: integer
+ *                           example: 3
+ *                         blockedUsers:
+ *                           type: integer
+ *                           example: 2
+ *                         details:
+ *                           type: object
+ *                           properties:
+ *                             suspicious:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   player_id:
+ *                                     type: string
+ *                                     example: "user456"
+ *                                   game_count:
+ *                                     type: integer
+ *                                     example: 100
+ *                                   avg_bet:
+ *                                     type: number
+ *                                     example: 50
+ *                                   max_bet:
+ *                                     type: number
+ *                                     example: 1000
+ *                                   win_rate:
+ *                                     type: number
+ *                                     example: 0.75
+ *                             multiAccount:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   ip:
+ *                                     type: string
+ *                                     example: "192.168.1.1"
+ *                                   _count:
+ *                                     type: object
+ *                                     properties:
+ *                                       companyId:
+ *                                         type: integer
+ *                                         example: 2
+ *                             blocked:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: string
+ *                                     example: "user789"
+ *                                   username:
+ *                                     type: string
+ *                                     example: "blocked_user"
+ *                                   role:
+ *                                     type: string
+ *                                     example: "PLAYER"
+ *                                   updatedAt:
+ *                                     type: string
+ *                                     format: date-time
+ *                                     example: "2025-01-01T00:00:00Z"
+ *                     realTime:
+ *                       type: object
+ *                       properties:
+ *                         activeGamesLast5Min:
+ *                           type: integer
+ *                           example: 10
+ *                         onlineUsers:
+ *                           type: integer
+ *                           example: 50
+ *                         recentGames:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "game123"
+ *                               player:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               betAmount:
+ *                                 type: number
+ *                                 example: 100
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               playedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                         recentTransactions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "trans123"
+ *                               username:
+ *                                 type: string
+ *                                 example: "player1"
+ *                               type:
+ *                                 type: string
+ *                                 example: "RECHARGE"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 100
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     downlineTree:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "user123"
+ *                         username:
+ *                           type: string
+ *                           example: "admin_user"
+ *                         role:
+ *                           type: string
+ *                           example: "ADMIN"
+ *                         status:
+ *                           type: string
+ *                           example: "ACTIVE"
+ *                         balance:
+ *                           type: number
+ *                           example: 1000
+ *                         points:
+ *                           type: number
+ *                           example: 1000
+ *                         childrenCount:
+ *                           type: integer
+ *                           example: 10
+ *                         gamesPlayed:
+ *                           type: integer
+ *                           example: 50
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                         children:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/DownlineTree'
+ *                     filters:
+ *                       type: object
+ *                       properties:
+ *                         role:
+ *                           type: string
+ *                           example: "PLAYER"
+ *                         status:
+ *                           type: string
+ *                           example: "ACTIVE"
+ *                         gameType:
+ *                           type: string
+ *                           example: "SLOTS"
+ *                 message:
+ *                   type: string
+ *                   example: "Dashboard data fetched successfully"
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *       403:
+ *         description: Forbidden (e.g., invalid role filter or role hierarchy violation)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Cannot filter by equal or higher role"
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "User not found"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to fetch dashboard data"
+ */
+router.get(
+  "/downline/dashboard",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  getDownlineDashboard
+);
+
+/**
+ * @swagger
+ * /api/company/downline/admin/dashboard:
+ *   get:
+ *     summary: Get admin dashboard statistics
+ *     description: Retrieve comprehensive analytics for the admin's downline, including all roles below ADMIN.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/startDate'
+ *       - $ref: '#/components/parameters/endDate'
+ *       - $ref: '#/components/parameters/role'
+ *       - $ref: '#/components/parameters/status'
+ *       - $ref: '#/components/parameters/gameType'
+ *       - $ref: '#/components/parameters/period'
+ *     responses:
+ *       200:
+ *         $ref: '#/components/responses/DashboardSuccess'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get(
+  "/downline/admin/dashboard",
+  authenticateToken,
+  requireRole("ADMIN"),
+  getAdminDashboard
+);
+
+/**
+ * @swagger
+ * /api/company/downline/distributor/dashboard:
+ *   get:
+ *     summary: Get distributor dashboard statistics
+ *     description: Retrieve analytics for the distributor's downline, including SUB_DISTRIBUTOR, STORE, and PLAYER roles.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/startDate'
+ *       - $ref: '#/components/parameters/endDate'
+ *       - $ref: '#/components/parameters/role'
+ *       - $ref: '#/components/parameters/status'
+ *       - $ref: '#/components/parameters/gameType'
+ *       - $ref: '#/components/parameters/period'
+ *     responses:
+ *       200:
+ *         $ref: '#/components/responses/DashboardSuccess'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get(
+  "/downline/distributor/dashboard",
+  authenticateToken,
+  requireRole("DISTRIBUTOR"),
+  getDistributorDashboard
+);
+
+/**
+ * @swagger
+ * /api/company/downline/sub-distributor/dashboard:
+ *   get:
+ *     summary: Get sub-distributor dashboard statistics
+ *     description: Retrieve analytics for the sub-distributor's downline, including STORE and PLAYER roles.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/startDate'
+ *       - $ref: '#/components/parameters/endDate'
+ *       - $ref: '#/components/parameters/role'
+ *       - $ref: '#/components/parameters/status'
+ *       - $ref: '#/components/parameters/gameType'
+ *       - $ref: '#/components/parameters/period'
+ *     responses:
+ *       200:
+ *         $ref: '#/components/responses/DashboardSuccess'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get(
+  "/downline/sub-distributor/dashboard",
+  authenticateToken,
+  requireRole("SUB_DISTRIBUTOR"),
+  getSubDistributorDashboard
+);
+
+/**
+ * @swagger
+ * /api/company/downline/store/dashboard:
+ *   get:
+ *     summary: Get store dashboard statistics
+ *     description: Retrieve analytics for the store's downline, including PLAYER roles.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/startDate'
+ *       - $ref: '#/components/parameters/endDate'
+ *       - $ref: '#/components/parameters/role'
+ *       - $ref: '#/components/parameters/status'
+ *       - $ref: '#/components/parameters/gameType'
+ *       - $ref: '#/components/parameters/period'
+ *     responses:
+ *       200:
+ *         $ref: '#/components/responses/DashboardSuccess'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get(
+  "/downline/store/dashboard",
+  authenticateToken,
+  requireRole("STORE"),
+  getStoreDashboard
+);
+
+/**
+ * @swagger
+ * /api/company/downline/export:
+ *   get:
+ *     summary: Export dashboard data
+ *     description: Export downline dashboard data in JSON, CSV, or Excel format.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [json, csv, excel]
+ *           default: json
+ *         description: Export format
+ *       - $ref: '#/components/parameters/startDate'
+ *       - $ref: '#/components/parameters/endDate'
+ *       - $ref: '#/components/parameters/role'
+ *       - $ref: '#/components/parameters/status'
+ *       - $ref: '#/components/parameters/gameType'
+ *       - $ref: '#/components/parameters/period'
+ *     responses:
+ *       200:
+ *         description: Dashboard data exported successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/responses/DashboardSuccess'
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               example: |
+ *                 Overview Statistics
+ *                 Metric,Value
+ *                 Total Downline,100
+ *                 Active Users,80
+ *                 Total Balance,50000
+ *                 Total Bets,100000
+ *                 Total Wins,80000
+ *                 Net Revenue,20000
+ *                 Hierarchy Breakdown
+ *                 Role,Count,Total Balance,Total Children
+ *                 PLAYER,50,25000,10
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         description: Failed to export dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to export dashboard data"
+ */
+router.get(
+  "/downline/export",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  exportDashboardData
+);
+
+/**
+ * @swagger
+ * /api/company/downline/updates:
+ *   get:
+ *     summary: Get real-time dashboard updates
+ *     description: Retrieve updates on new games, transactions, and status changes since the last update timestamp.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: lastUpdate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp of the last update (default: 1 minute ago)
+ *     responses:
+ *       200:
+ *         description: Dashboard updates fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     hasUpdates:
+ *                       type: boolean
+ *                       example: true
+ *                     newGames:
+ *                       type: integer
+ *                       example: 5
+ *                     newTransactions:
+ *                       type: integer
+ *                       example: 10
+ *                     statusChanges:
+ *                       type: integer
+ *                       example: 2
+ *                     timestamp:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-01-01T00:00:00Z"
+ *                 message:
+ *                   type: string
+ *                   example: "Dashboard updates fetched successfully"
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       500:
+ *         description: Failed to check for updates
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to check for updates"
+ */
+router.get(
+  "/downline/updates",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  getDashboardUpdates
+);
+
+/**
+ * @swagger
+ * /api/company/downline/user/{targetUserId}:
+ *   get:
+ *     summary: Get detailed statistics for a specific user
+ *     description: Retrieve detailed analytics for a specific user in the downline or the current user, respecting role hierarchy.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: targetUserId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID of the user to retrieve stats for
+ *     responses:
+ *       200:
+ *         description: User detailed stats fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           example: "user456"
+ *                         username:
+ *                           type: string
+ *                           example: "player1"
+ *                         email:
+ *                           type: string
+ *                           example: "player1@example.com"
+ *                         role:
+ *                           type: string
+ *                           example: "PLAYER"
+ *                         status:
+ *                           type: string
+ *                           example: "ACTIVE"
+ *                         points:
+ *                           type: number
+ *                           example: 1000
+ *                         parent:
+ *                           type: object
+ *                           properties:
+ *                             username:
+ *                               type: string
+ *                               example: "store1"
+ *                             role:
+ *                               type: string
+ *                               example: "STORE"
+ *                         childrenCount:
+ *                           type: integer
+ *                           example: 0
+ *                         contactNumber:
+ *                           type: string
+ *                           example: "+1234567890"
+ *                         remarks:
+ *                           type: string
+ *                           example: "Active player"
+ *                         rechargePerm:
+ *                           type: boolean
+ *                           example: true
+ *                         withdrawPerm:
+ *                           type: boolean
+ *                           example: true
+ *                         agentProtect:
+ *                           type: boolean
+ *                           example: false
+ *                         lastLoggedIn:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                        
+
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                     config:
+ *                       type: object
+ *                       additionalProperties:
+ *                         type: string
+ *                     wallet:
+ *                       type: object
+ *                       properties:
+ *                         balance:
+ *                           type: number
+ *                           example: 500
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-01-01T00:00:00Z"
+ *                     gaming:
+ *                       type: object
+ *                       properties:
+ *                         totalGames:
+ *                           type: integer
+ *                           example: 50
+ *                         totalBets:
+ *                           type: number
+ *                           example: 5000
+ *                         totalWins:
+ *                           type: number
+ *                           example: 4000
+ *                         netProfit:
+ *                           type: number
+ *                           example: -1000
+ *                         winRate:
+ *                           type: string
+ *                           example: "40.00"
+ *                         recentGames:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "game123"
+ *                               gameType:
+ *                                 type: string
+ *                                 example: "SLOTS"
+ *                               betAmount:
+ *                                 type: number
+ *                                 example: 100
+ *                               winAmount:
+ *                                 type: number
+ *                                 example: 200
+ *                               result:
+ *                                 type: string
+ *                                 example: "WIN"
+ *                               playedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     financial:
+ *                       type: object
+ *                       properties:
+ *                         ledgerSummary:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: object
+ *                             properties:
+ *                               total:
+ *                                 type: number
+ *                                 example: 1000
+ *                               count:
+ *                                 type: integer
+ *                                 example: 10
+ *                         recentTransactions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "trans123"
+ *                               type:
+ *                                 type: string
+ *                                 example: "RECHARGE"
+ *                               amount:
+ *                                 type: number
+ *                                 example: 100
+ *                               remark:
+ *                                 type: string
+ *                                 example: "Deposit"
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                     activity:
+ *                       type: object
+ *                       properties:
+ *                         totalActivities:
+ *                           type: integer
+ *                           example: 50
+ *                         recentActivities:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 example: "act123"
+ *                               ip:
+ *                                 type: string
+ *                                 example: "192.168.1.1"
+ *                               device:
+ *                                 type: object
+ *                                 additionalProperties:
+ *                                   type: string
+ *                               location:
+ *                                 type: object
+ *                                 additionalProperties:
+ *                                   type: string
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                 message:
+ *                   type: string
+ *                   example: "User detailed stats fetched successfully"
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Unauthorized access or role hierarchy violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Unauthorized access"
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         description: Failed to fetch user details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to fetch user details"
+ */
+router.get(
+  "/downline/user/:targetUserId",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  getUserDetailedStats
+);
+
+/**
+ * @swagger
+ * /api/company/downline/compare:
+ *   get:
+ *     summary: Get comparative analysis of dashboard data
+ *     description: Compare dashboard statistics between current and previous periods.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: compareWith
+ *         schema:
+ *           type: string
+ *           enum: [previous_period, parent, siblings]
+ *         description: Comparison type
+ *     responses:
+ *       200:
+ *         description: Comparative analysis fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     period:
+ *                       type: object
+ *                       properties:
+ *                         current:
+ *                           type: object
+ *                           properties:
+ *                             start:
+ *                               type: string
+ *                               format: date-time
+ *                               example: "2025-01-01T00:00:00Z"
+ *                             end:
+ *                               type: string
+ *                               format: date-time
+ *                               example: "2025-01-31T23:59:59Z"
+ *                         previous:
+ *                           type: object
+ *                           properties:
+ *                             start:
+ *                               type: string
+ *                               format: date-time
+ *                               example: "2024-12-01T00:00:00Z"
+ *                             end:
+:
+ *                               type: string
+ *                               format: date-time
+ *                               example: "2024-12-31T23:59:59Z"
+ *                     comparison:
+ *                       type: object
+ *                       properties:
+ *                         totalDownline:
+ *                           type: object
+ *                           properties:
+ *                             current:
+ *                               type: integer
+ *                               example: 100
+ *                             previous:
+ *                               type: integer
+ *                               example: 90
+ *                             change:
+ *                               type: integer
+ *                               example: 10
+ *                             changePercent:
+ *                               type: string
+ *                               example: "11.11"
+ *                         activeUsers:
+ *                           type: object
+ *                           properties:
+ *                             current:
+ *                               type: integer
+ *                               example: 80
+ *                             previous:
+ *                               type: integer
+ *                               example: 70
+ *                             change:
+ *                               type: integer
+ *                               example: 10
+ *                             changePercent:
+ *                               type: string
+ *                               example: "14.29"
+ *                         totalBets:
+ *                           type: object
+ *                           properties:
+ *                             current:
+ *                               type: number
+ *                               example: 100000
+ *                             previous:
+ *                               type: number
+ *                               example: 90000
+ *                             change:
+ *                               type: number
+ *                               example: 10000
+ *                             changePercent:
+ *                               type: string
+ *                               example: "11.11"
+ *                         netRevenue:
+ *                           type: object
+ *                           properties:
+ *                             current:
+ *                               type: number
+ *                               example: 20000
+ *                             previous:
+ *                               type: number
+ *                               example: 18000
+ *                             change:
+ *                               type: number
+ *                               example: 2000
+ *                             changePercent:
+ *                               type: string
+ *                               example: "11.11"
+ *                         commissions:
+ *                           type: object
+ *                           properties:
+ *                             current:
+ *                               type: number
+ *                               example: 5000
+ *                             previous:
+ *                               type: number
+ *                               example: 4500
+ *                             change:
+ *                               type: number
+ *                               example: 500
+ *                             changePercent:
+ *                               type: string
+ *                               example: "11.11"
+ *                     insights:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                         example: "Active users increased by 14.29% - strong growth trend"
+ *                 message:
+ *                   type: string
+ *                   example: "Comparative analysis fetched successfully"
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       500:
+ *         description: Failed to generate comparative analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to generate comparative analysis"
+ */
+router.get(
+  "/downline/compare",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  getComparativeAnalysis
+);
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     DownlineTree:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           example: "user123"
+ *         username:
+ *           type: string
+ *           example: "admin_user"
+ *         role:
+ *           type: string
+ *           example: "ADMIN"
+ *         status:
+ *           type: string
+ *           example: "ACTIVE"
+ *         balance:
+ *           type: number
+ *           example: 1000
+ *         points:
+ *           type: number
+ *           example: 1000
+ *         childrenCount:
+ *           type: integer
+ *           example: 10
+ *         gamesPlayed:
+ *           type: integer
+ *           example: 50
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-01-01T00:00:00Z"
+ *         children:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/DownlineTree'
+ *   parameters:
+ *     startDate:
+ *       in: query
+ *       name: startDate
+ *       schema:
+ *         type: string
+ *         format: date-time
+ *       description: Start date for filtering data (e.g., '2025-01-01T00:00:00Z')
+ *     endDate:
+ *       in: query
+ *       name: endDate
+ *       schema:
+ *         type: string
+ *         format: date-time
+ *       description: End date for filtering data (e.g., '2025-12-31T23:59:59Z')
+ *     role:
+ *       in: query
+ *       name: role
+ *       schema:
+ *         type: string
+ *         enum: [ADMIN, DISTRIBUTOR, SUB_DISTRIBUTOR, STORE, PLAYER]
+ *       description: Filter by role (must be lower than the user's role)
+ *     status:
+ *       in: query
+ *       name: status
+ *       schema:
+ *         type: string
+ *         enum: [ACTIVE, BLOCK]
+ *       description: Filter by user status
+ *     gameType:
+ *       in: query
+ *       name: gameType
+ *       schema:
+ *         type: string
+ *       description: Filter by game type
+ *     period:
+ *       in: query
+ *       name: period
+ *       schema:
+ *         type: string
+ *         enum: [7d, 30d, 90d, 1y]
+ *         default: 30d
+ *       description: Predefined date range for filtering (e.g., '7d' for last 7 days)
+ *   responses:
+ *     DashboardSuccess:
+ *       description: Dashboard data fetched successfully
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               data:
+ *                 $ref: '#/components/schemas/DashboardData'
+ *               message:
+ *                 type: string
+ *                 example: "Dashboard data fetched successfully"
+ *     Unauthorized:
+ *       description: Unauthorized
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "Unauthorized"
+ *     Forbidden:
+ *       description: Forbidden (e.g., invalid role filter or role hierarchy violation)
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "Cannot filter by equal or higher role"
+ *     NotFound:
+ *       description: User not found
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "User not found"
+ *     InternalServerError:
+ *       description: Internal server error
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "Internal server error"
+ *   schemas:
+ *     DashboardData:
+ *       type: object
+ *       properties:
+ *         period:
+ *           type: object
+ *           properties:
+ *             startDate:
+ *               type: string
+ *               format: date-time
+ *               example: "2025-01-01T00:00:00Z"
+ *             endDate:
+ *               type: string
+ *               format: date-time
+ *               example: "2025-01-31T23:59:59Z"
+ *             label:
+ *               type: string
+ *               example: "30d"
+ *         currentUser:
+ *           type: object
+ *           properties:
+ *             id:
+ *               type: string
+ *               example: "user123"
+ *             username:
+ *               type: string
+ *               example: "admin_user"
+ *             role:
+ *               type: string
+ *               example: "ADMIN"
+ *             points:
+ *               type: number
+ *               example: 1000
+ *             status:
+ *               type: string
+ *               example: "ACTIVE"
+ *         overview:
+ *           $ref: '#/components/schemas/OverviewStats'
+ *         hierarchy:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/HierarchyBreakdown'
+ *         financial:
+ *           $ref: '#/components/schemas/FinancialAnalytics'
+ *         games:
+ *           $ref: '#/components/schemas/GameAnalytics'
+ *         activity:
+ *           $ref: '#/components/schemas/UserActivityAnalytics'
+ *         topPerformers:
+ *           $ref: '#/components/schemas/TopPerformers'
+ *         wallet:
+ *           $ref: '#/components/schemas/WalletSummary'
+ *         trends:
+ *           $ref: '#/components/schemas/TimeTrends'
+ *         commissions:
+ *           $ref: '#/components/schemas/CommissionBreakdown'
+ *         risk:
+ *           $ref: '#/components/schemas/RiskMetrics'
+ *         realTime:
+ *           $ref: '#/components/schemas/RealTimeMetrics'
+ *         downlineTree:
+ *           $ref: '#/components/schemas/DownlineTree'
+ *         filters:
+ *           type: object
+ *           properties:
+ *             role:
+ *               type: string
+ *               example: "PLAYER"
+ *             status:
+ *               type: string
+ *               example: "ACTIVE"
+ *             gameType:
+ *               type: string
+ *               example: "SLOTS"
+ *     OverviewStats:
+ *       type: object
+ *       properties:
+ *         totalDownline:
+ *           type: integer
+ *           example: 100
+ *         activeUsers:
+ *           type: integer
+ *           example: 80
+ *         inactiveUsers:
+ *           type: integer
+ *           example: 20
+ *         totalBalance:
+ *           type: number
+ *           example: 50000
+ *         totalBets:
+ *           type: object
+ *           properties:
+ *             amount:
+ *               type: number
+ *               example: 100000
+ *             count:
+ *               type: integer
+ *               example: 500
+ *         totalWins:
+ *           type: object
+ *           properties:
+ *             amount:
+ *               type: number
+ *               example: 80000
+ *             count:
+ *               type: integer
+ *               example: 300
+ *         netRevenue:
+ *           type: number
+ *           example: 20000
+ *         totalCommissions:
+ *           type: number
+ *           example: 5000
+ *         newUsers:
+ *           type: integer
+ *           example: 10
+ *         houseEdge:
+ *           type: string
+ *           example: "20.00"
+ *     HierarchyBreakdown:
+ *       type: object
+ *       properties:
+ *         role:
+ *           type: string
+ *           example: "PLAYER"
+ *         count:
+ *           type: integer
+ *           example: 50
+ *         totalBalance:
+ *           type: number
+ *           example: 25000
+ *         totalChildren:
+ *           type: integer
+ *           example: 10
+ *         users:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "user456"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               status:
+ *                 type: string
+ *                 example: "ACTIVE"
+ *               balance:
+ *                 type: number
+ *                 example: 500
+ *               childrenCount:
+ *                 type: integer
+ *                 example: 0
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ *     FinancialAnalytics:
+ *       type: object
+ *       properties:
+ *         summary:
+ *           type: object
+ *           additionalProperties:
+ *             type: object
+ *             properties:
+ *               total:
+ *                 type: number
+ *                 example: 10000
+ *               count:
+ *                 type: integer
+ *                 example: 50
+ *         recentTransactions:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "trans123"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               type:
+ *                 type: string
+ *                 example: "RECHARGE"
+ *               amount:
+ *                 type: number
+ *                 example: 100
+ *               remark:
+ *                 type: string
+ *                 example: "Deposit"
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ *         adjustments:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "adj123"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               amount:
+ *                 type: number
+ *                 example: 50
+ *               remark:
+ *                 type: string
+ *                 example: "Bonus"
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ *     GameAnalytics:
+ *       type: object
+ *       properties:
+ *         byGameType:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               gameType:
+ *                 type: string
+ *                 example: "SLOTS"
+ *               totalGames:
+ *                 type: integer
+ *                 example: 100
+ *               totalBets:
+ *                 type: number
+ *                 example: 10000
+ *               totalWins:
+ *                 type: number
+ *                 example: 8000
+ *               netRevenue:
+ *                 type: number
+ *                 example: 2000
+ *         byResult:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               result:
+ *                 type: string
+ *                 example: "WIN"
+ *               count:
+ *                 type: integer
+ *                 example: 50
+ *               totalBets:
+ *                 type: number
+ *                 example: 5000
+ *               totalWins:
+ *                 type: number
+ *                 example: 4000
+ *         recentGames:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "game123"
+ *               gameType:
+ *                 type: string
+ *                 example: "SLOTS"
+ *               player:
+ *                 type: string
+ *                 example: "player1"
+ *               playerRole:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               store:
+ *                 type: string
+ *                 example: "store1"
+ *               betAmount:
+ *                 type: number
+ *                 example: 100
+ *               winAmount:
+ *                 type: number
+ *                 example: 200
+ *               result:
+ *                 type: string
+ *                 example: "WIN"
+ *               playedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ *     UserActivityAnalytics:
+ *       type: object
+ *       properties:
+ *         totalActivities:
+ *           type: integer
+ *           example: 1000
+ *         userActivities:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               companyId:
+ *                 type: string
+ *                 example: "user456"
+ *               activityCount:
+ *                 type: integer
+ *                 example: 50
+ *         deviceBreakdown:
+ *           type: object
+ *           additionalProperties:
+ *             type: integer
+ *             example: 100
+ *         locationBreakdown:
+ *           type: object
+ *           additionalProperties:
+ *             type: integer
+ *             example: 50
+ *     TopPerformers:
+ *       type: object
+ *       properties:
+ *         topByBets:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               companyId:
+ *                 type: string
+ *                 example: "user456"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               _sum:
+ *                 type: object
+ *                 properties:
+ *                   amount:
+ *                     type: number
+ *                     example: 10000
+ *         topByWins:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               companyId:
+ *                 type: string
+ *                 example: "user456"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               _sum:
+ *                 type: object
+ *                 properties:
+ *                   amount:
+ *                     type: number
+ *                     example: 8000
+ *         topByCommissions:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               companyId:
+ *                 type: string
+ *                 example: "user456"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               _sum:
+ *                 type: object
+ *                 properties:
+ *                   amount:
+ *                     type: number
+ *                     example: 2000
+ *         mostActiveGaming:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               playerId:
+ *                 type: string
+ *                 example: "user456"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               _count:
+ *                 type: integer
+ *                 example: 100
+ *     WalletSummary:
+ *       type: object
+ *       properties:
+ *         totalBalance:
+ *           type: number
+ *           example: 50000
+ *         avgBalance:
+ *           type: number
+ *           example: 500
+ *         walletCount:
+ *           type: integer
+ *           example: 100
+ *         lowBalanceUsers:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               status:
+ *                 type: string
+ *                 example: "ACTIVE"
+ *               balance:
+ *                 type: number
+ *                 example: 50
+ *         highBalanceUsers:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               balance:
+ *                 type: number
+ *                 example: 15000
+ *     TimeTrends:
+ *       type: object
+ *       properties:
+ *         daily:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 example: "2025-01-01"
+ *               active_players:
+ *                 type: integer
+ *                 example: 50
+ *               total_bets:
+ *                 type: number
+ *                 example: 10000
+ *               total_wins:
+ *                 type: number
+ *                 example: 8000
+ *               total_commissions:
+ *                 type: number
+ *                 example: 2000
+ *               bet_count:
+ *                 type: integer
+ *                 example: 100
+ *         hourly:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               hour:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ *               transaction_count:
+ *                 type: integer
+ *                 example: 50
+ *               bets:
+ *                 type: number
+ *                 example: 5000
+ *               wins:
+ *                 type: number
+ *                 example: 4000
+ *     CommissionBreakdown:
+ *       type: object
+ *       properties:
+ *         total:
+ *           type: number
+ *           example: 5000
+ *         count:
+ *           type: integer
+ *           example: 100
+ *         byRole:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 example: "PLAYER"
+ *               total:
+ *                 type: number
+ *                 example: 2000
+ *               count:
+ *                 type: integer
+ *                 example: 50
+ *         topEarners:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               amount:
+ *                 type: number
+ *                 example: 1000
+ *     RiskMetrics:
+ *       type: object
+ *       properties:
+ *         suspiciousActivity:
+ *           type: integer
+ *           example: 5
+ *         multiAccountSuspects:
+ *           type: integer
+ *           example: 3
+ *         blockedUsers:
+ *           type: integer
+ *           example: 2
+ *         details:
+ *           type: object
+ *           properties:
+ *             suspicious:
+ *               type: Finkelstein:
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   player_id:
+ *                     type: string
+ *                     example: "user456"
+ *                   game_count:
+ *                     type: integer
+ *                     example: 100
+ *                   avg_bet:
+ *                     type: number
+ *                     example: 50
+ *                   max_bet:
+ *                     type: number
+ *                     example: 1000
+ *                   win_rate:
+ *                     type: number
+ *                     example: 0.75
+ *             multiAccount:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   ip:
+ *                     type: string
+ *                     example: "192.168.1.1"
+ *                   _count:
+ *                     type: object
+ *                     properties:
+ *                       companyId:
+ *                         type: integer
+ *                         example: 2
+ *             blocked:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                     example: "user789"
+ *                   username:
+ *                     type: string
+ *                     example: "blocked_user"
+ *                   role:
+ *                     type: string
+ *                     example: "PLAYER"
+ *                   updatedAt:
+ *                     type: string
+ *                     format: date-time
+ *                     example: "2025-01-01T00:00:00Z"
+ *     RealTimeMetrics:
+ *       type: object
+ *       properties:
+ *         activeGamesLast5Min:
+ *           type: integer
+ *           example: 10
+ *         onlineUsers:
+ *           type: integer
+ *           example: 50
+ *         recentGames:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "game123"
+ *               player:
+ *                 type: string
+ *                 example: "player1"
+ *               gameType:
+ *                 type: string
+ *                 example: "SLOTS"
+ *               betAmount:
+ *                 type: number
+ *                 example: 100
+ *               result:
+ *                 type: string
+ *                 example: "WIN"
+ *               playedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ *         recentTransactions:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "trans123"
+ *               username:
+ *                 type: string
+ *                 example: "player1"
+ *               type:
+ *                 type: string
+ *                 example: "RECHARGE"
+ *               amount:
+ *                 type: number
+ *                 example: 100
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-01-01T00:00:00Z"
+ */
 
 export const companyRoutes = router;
