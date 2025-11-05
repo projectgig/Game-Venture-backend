@@ -4,7 +4,7 @@ import { verifyToken } from "@game/utils/jwt";
 import { Company, Role } from "@prisma/client";
 
 export interface AuthRequest extends Request {
-  company?: {
+  user?: {
     id: string;
     username: string;
     type: string;
@@ -45,12 +45,12 @@ export const authenticateToken = async (
       id: company.id,
       username: company.username,
       role: company.role,
-    };
+    } as any;
 
     next();
   } catch (error) {
     console.error("Authentication error:", error);
-    return res.status(403).json({ message: "Invalid or expired token" });
+    return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
 
@@ -59,7 +59,7 @@ export const requireAdmin = (
   res: Response,
   next: NextFunction
 ) => {
-  if (!req.company) {
+  if (!req.user) {
     return res.status(401).json({ message: "Authentication required" });
   }
 

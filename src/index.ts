@@ -14,6 +14,7 @@ import swaggerUi from "swagger-ui-express";
 import { mainRoutes } from "@game/routes/index";
 import bodyParser from "body-parser";
 import { Request, Response } from "express";
+import cookieParser from "cookie-parser";
 
 // App Configuration
 class App {
@@ -30,7 +31,9 @@ class App {
     dotenv.config();
 
     // CORS
-    this.app.use(cors({ origin: env.CORS_ORIGIN || "*" }));
+    this.app.use(cookieParser());
+
+    this.app.use(cors({ origin: env.CORS_ORIGIN || "*", credentials: true }));
     this.app.use(bodyParser.json());
     this.app.use(bodyParser.urlencoded({ extended: true }));
 

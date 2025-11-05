@@ -32,8 +32,41 @@ model Company {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   CompanyActivity CompanyActivity[]
+  Wallet          Wallet?
+  Ledger          Ledger[]
+  CompanyConfig   CompanyConfig?
+  AuditLog        AuditLog[]
+
+  GameSessionsAsPlayer GameSession[] @relation("PlayerGames")
+  GameSessionsAsStore  GameSession[] @relation("StoreGames")
 
   @@map("companies")
+}
+
+model CompanyConfig {
+  id              String          @id @default(cuid())
+  companyId       String          @unique
+  company         Company         @relation(fields: [companyId], references: [id])
+  winRate         Float           @default(0.5) // expected win rate (0–1)
+  commissionRate  Float           @default(0.0) // % for distributors/stores
+  maxBetLimit     Decimal         @default(1000)
+  minBetLimit     Decimal         @default(1)
+  gameControlMode GameControlMode @default(FAIR)
+  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime        @default(now())
+}
+
+model GameSession {
+  id        String     @id @default(cuid())
+  gameType  GameType
+  playerId  String
+  player    Company    @relation("PlayerGames", fields: [playerId], references: [id])
+  storeId   String?
+  store     Company?   @relation("StoreGames", fields: [storeId], references: [id])
+  betAmount Decimal
+  winAmount Decimal?   @default(0)
+  result    GameResult
+  playedAt  DateTime   @default(now())
 }
 
 model CompanyActivity {
@@ -44,6 +77,52 @@ model CompanyActivity {
   device    Json?
   location  Json?
   createdAt DateTime @default(now())
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  balance   Decimal  @default(0)
+  company   Company  @relation(fields: [companyId], references: [id])
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model Ledger {
+  id          String     @id @default(cuid())
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  amount      Decimal
+  type        LedgerType
+  referenceId String?
+  remark      String?
+  createdAt   DateTime   @default(now())
+
+  @@index([companyId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     Company? @relation(fields: [actorId], references: [id])
+  action    String
+  targetId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+}
+
+enum GameControlMode {
+  FAIR
+  CONTROLLED
+}
+
+enum LedgerType {
+  RECHARGE
+  WITHDRAW
+  BET
+  WIN
+  COMMISSION
+  ADJUSTMENT
 }
 
 enum Status {
@@ -57,4 +136,19 @@ enum Role {
   SUB_DISTRIBUTOR
   STORE
   PLAYER
+}
+
+enum GameType {
+  BLACKJACK
+  POKER
+  ROULETTE
+  OTHER
+}
+
+enum GameResult {
+  WIN
+  LOSS
+  DRAW
+  PENDING
+  CANCELLED
 }

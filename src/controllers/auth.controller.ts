@@ -75,15 +75,15 @@ export const login = async (req: Request, res: Response) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/api/auth/refresh-token",
     });
 
     res.json({
       message: "Login successful",
       token: {
         accessToken,
-        refreshToken,
       },
       company: {
         id: company.id,
@@ -105,6 +105,8 @@ export const login = async (req: Request, res: Response) => {
 export const refreshToken = async (req: Request, res: Response) => {
   try {
     const token = req.cookies?.refreshToken;
+    console.log(req?.cookies);
+    console.log(token);
     if (!token) {
       return res
         .status(StatusCodes.UNAUTHORIZED)
@@ -139,9 +141,25 @@ export const refreshToken = async (req: Request, res: Response) => {
       role: company.role,
     });
 
+    const refreshToken = generateRefreshToken({
+      id: company.id,
+      username: company.username,
+      role: company.role,
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/api/auth/refresh-token",
+    });
+
     return res.json({
-      accessToken,
-      message: "Access token refreshed successfully",
+      token: {
+        accessToken,
+      },
+      message: "Successfully refreshed token.",
     });
   } catch (error) {
     loggerInstance.error(`Refresh token error:, ${error}`);
