@@ -7,6 +7,7 @@ import { roleHierarchy } from "@game/common/middleware/rbac.middleware";
 import { StatusCodes } from "http-status-codes";
 import loggerInstance from "@game/common/logger/logger.service";
 import { handleETag } from "@game/utils/etagUtil";
+import { AuthRequest } from "@game/common/middleware/auth.middleware";
 
 // check if targetId is in my hierarchy
 async function isInMyHierarchy(
@@ -27,12 +28,9 @@ async function isInMyHierarchy(
   return false;
 }
 
-export const createUser = async (
-  req: Request<unknown, unknown, any>,
-  res: Response
-) => {
+export const createUser = async (req: AuthRequest, res: Response) => {
   try {
-    const creator = req.user as Company;
+    const creator = req.user;
     if (!creator) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -117,7 +115,7 @@ export const createUser = async (
   }
 };
 
-export const getDownline = async (req: Request, res: Response) => {
+export const getDownline = async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user;
     if (!user)
@@ -234,7 +232,7 @@ export const getDownline = async (req: Request, res: Response) => {
   }
 };
 
-export const getUser = async (req: Request<{ id: string }>, res: Response) => {
+export const getUser = async (req: AuthRequest, res: Response) => {
   try {
     const currentUser = req.user;
     if (!currentUser)
@@ -291,7 +289,7 @@ export const getUser = async (req: Request<{ id: string }>, res: Response) => {
   }
 };
 
-export const updateUser = async (req: Request, res: Response) => {
+export const updateUser = async (req: AuthRequest, res: Response) => {
   try {
     const currentUser = req.user;
     if (!currentUser)
@@ -346,10 +344,7 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
-export const changePassword = async (
-  req: Request<unknown, unknown, ChangePasswordBody>,
-  res: Response
-) => {
+export const changePassword = async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user;
     if (!user)
@@ -391,10 +386,7 @@ export const changePassword = async (
   }
 };
 
-export const toggleUserStatus = async (
-  req: Request<{ id: string }>,
-  res: Response
-) => {
+export const toggleUserStatus = async (req: AuthRequest, res: Response) => {
   try {
     const currentUser = req.user;
     if (!currentUser)
@@ -439,10 +431,7 @@ export const toggleUserStatus = async (
   }
 };
 
-export const updateUserCoin = async (
-  req: Request<unknown, unknown, { id: string; coin: number }>,
-  res: Response
-) => {
+export const updateUserCoin = async (req: AuthRequest, res: Response) => {
   try {
     const currentUser = req.user;
     if (!currentUser) return res.status(401).json({ message: "Unauthorized" });

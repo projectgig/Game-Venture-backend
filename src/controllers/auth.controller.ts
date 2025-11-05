@@ -105,8 +105,6 @@ export const login = async (req: Request, res: Response) => {
 export const refreshToken = async (req: Request, res: Response) => {
   try {
     const token = req.cookies?.refreshToken;
-    console.log(req?.cookies);
-    console.log(token);
     if (!token) {
       return res
         .status(StatusCodes.UNAUTHORIZED)

@@ -6,6 +6,7 @@ import {
   GameResult,
   Status,
 } from "@prisma/client";
+import { AuthRequest } from "@game/common/middleware/auth.middleware";
 
 const prisma = new PrismaClient();
 
@@ -39,7 +40,7 @@ function convertToCSV(data: any): string {
   return rows.join("\n");
 }
 
-export const getDownlineDashboard = async (req: Request, res: Response) => {
+export const getDownlineDashboard = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id as string;
     const userRole = req.user?.role;
@@ -1017,7 +1018,7 @@ export const getStoreDashboard = async (req: Request, res: Response) => {
   return getDownlineDashboard(req, res);
 };
 
-export const exportDashboardData = async (req: Request, res: Response) => {
+export const exportDashboardData = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { format = "json" } = req.query;
@@ -1053,7 +1054,7 @@ export const exportDashboardData = async (req: Request, res: Response) => {
 };
 
 // real-time updates (can be used with WebSocket or polling)
-export const getDashboardUpdates = async (req: Request, res: Response) => {
+export const getDashboardUpdates = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id as string;
     const { lastUpdate } = req.query;
@@ -1101,7 +1102,7 @@ export const getDashboardUpdates = async (req: Request, res: Response) => {
 };
 
 // detailed user drill-down
-export const getUserDetailedStats = async (req: Request, res: Response) => {
+export const getUserDetailedStats = async (req: AuthRequest, res: Response) => {
   try {
     const { targetUserId } = req.params;
     const currentUserId = req.user?.id as string;
@@ -1244,7 +1245,10 @@ export const getUserDetailedStats = async (req: Request, res: Response) => {
 };
 
 // comparative analysis
-export const getComparativeAnalysis = async (req: Request, res: Response) => {
+export const getComparativeAnalysis = async (
+  req: AuthRequest,
+  res: Response
+) => {
   try {
     const userId = req.user?.id as string;
     const { compareWith } = req.query;
