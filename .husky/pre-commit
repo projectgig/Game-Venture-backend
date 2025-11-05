@@ -3,22 +3,21 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo "${GREEN}- - - - - - - - - - - - - - - - - - - - - - - - - - - -${NC}"
-echo "${GREEN}Compiling TYPESCRIPT: 💡 ${NC}"
-pnpm tsc --noEmit || {
+echo "${GREEN}Compiling TYPESCRIPT: 🚀 💡 ${NC}"
+yarn tsc --noEmit || {
     echo "${RED} TYPESCRIPT Compile failed: 🚨 🤡 🚨  ${NC}"
     exit 1
 }
-echo "${GREEN}Compile success: 💸 ${NC}"
+echo "${GREEN}Compile success: ✅ 💸 ${NC}"
 echo "${GREEN}- - - - - - - - - - - - - - - - - - - - - - - - - - - -${NC}"
-
-# Suppress excessive output on Windows
+# Running this command on windows to stop excessive output
+# https://github.com/okonet/lint-staged/issues/1164
 if [ "$OSTYPE" == "msys" ]; then
     exec >/dev/null 2>&1
 fi
-
 echo "${GREEN}- - - - - - - - - - - - - - - - - - - - - - - - - - - -${NC}"
 echo "${GREEN}Linting files: 🚚 📝 ${NC}"
-pnpm run build || {
+yarn run build || {
     echo "${RED}Linting failed: 🔥 🤡💩 🔥 ${NC}"
     exit 1
 }

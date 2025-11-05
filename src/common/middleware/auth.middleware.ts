@@ -13,7 +13,7 @@ export interface AuthRequest extends Request {
 }
 
 export const authenticateToken = async (
-  req: AuthRequest,
+  req: any,
   res: Response,
   next: NextFunction
 ) => {
@@ -55,7 +55,7 @@ export const authenticateToken = async (
 };
 
 export const requireAdmin = (
-  req: AuthRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ) => {
@@ -73,7 +73,7 @@ export const rateLimit = (
 ) => {
   const requests = new Map();
 
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     const ip = req.ip || req.socket.remoteAddress;
     const now = Date.now();
     const windowStart = now - windowMs;
