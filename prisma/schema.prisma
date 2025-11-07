@@ -35,10 +35,12 @@ model Company {
   Wallet          Wallet?
   Ledger          Ledger[]
   CompanyConfig   CompanyConfig?
-  AuditLog        AuditLog[]
+
+  AuditLog AuditLog[]
 
   GameSessionsAsPlayer GameSession[] @relation("PlayerGames")
   GameSessionsAsStore  GameSession[] @relation("StoreGames")
+  payment              Payment[]
 
   @@map("companies")
 }
@@ -67,6 +69,7 @@ model GameSession {
   winAmount Decimal?   @default(0)
   result    GameResult
   playedAt  DateTime   @default(now())
+  ledgers   Ledger[]
 }
 
 model CompanyActivity {
@@ -84,21 +87,43 @@ model Wallet {
   companyId String   @unique
   balance   Decimal  @default(0)
   company   Company  @relation(fields: [companyId], references: [id])
+  ledgers   Ledger[]
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }
 
 model Ledger {
-  id          String     @id @default(cuid())
-  companyId   String
-  company     Company    @relation(fields: [companyId], references: [id])
-  amount      Decimal
-  type        LedgerType
-  referenceId String?
-  remark      String?
-  createdAt   DateTime   @default(now())
+  id            String       @id @default(cuid())
+  companyId     String
+  walletId      String
+  paymentId     String?
+  gameSessionId String?
+  sourceId      String?
+  sourceType    String?
+  type          LedgerType
+  amount        Decimal
+  balance       Decimal
+  remark        String?
+  wallet        Wallet       @relation(fields: [walletId], references: [id])
+  payment       Payment?     @relation(fields: [paymentId], references: [id])
+  gameSession   GameSession? @relation(fields: [gameSessionId], references: [id])
+  company       Company      @relation(fields: [companyId], references: [id])
+  createdAt     DateTime     @default(now())
+}
 
-  @@index([companyId, createdAt])
+model Payment {
+  id           String          @id @default(cuid())
+  companyId    String
+  amount       Decimal         @default(0)
+  currency     String?
+  topupBalance Decimal         @default(0)
+  merchant     PaymentMerchant
+  status       PaymentStatus   @default(PENDING)
+  company      Company         @relation(fields: [companyId], references: [id])
+
+  ledgers   Ledger[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AuditLog {
@@ -151,4 +176,16 @@ enum GameResult {
   DRAW
   PENDING
   CANCELLED
+}
+
+enum PaymentMerchant {
+  PAYPAL
+  STRIPE
+}
+
+enum PaymentStatus {
+  PAID
+  CANCELLED
+  PENDING
+  REFUNDED
 }
