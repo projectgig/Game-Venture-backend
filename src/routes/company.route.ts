@@ -2399,7 +2399,7 @@ router.get(
  *         schema:
  *           type: string
  *           enum: [previous_period, parent, siblings]
- *         description: Comparison type
+ *           description: Comparison type
  *     responses:
  *       200:
  *         description: Comparative analysis fetched successfully
