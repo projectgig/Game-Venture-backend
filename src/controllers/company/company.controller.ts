@@ -474,3 +474,43 @@ export const updateUserCoin = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const deletedUser = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const currentUser = req.user;
+    if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
+
+    const target = await db.findUnique<Company>(
+      "company",
+      { where: { id } },
+      { ttl: 60 }
+    );
+    if (!target) return res.status(404).json({ message: "User not found" });
+
+    if (target.role === "ADMIN")
+      return res.status(403).json({ message: "Cannot delete admin" });
+
+    let allowed = false;
+
+    if (currentUser.role === "ADMIN") {
+      allowed = true;
+    } else {
+      allowed = await isInMyHierarchy(currentUser.id, id);
+    }
+
+    if (!allowed) return res.status(403).json({ message: "Access denied" });
+
+    await db.update("company", {
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    return res.json({ message: "User deleted successfully" });
+  } catch (err) {
+    loggerInstance.error(`Delete user error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
+  }
+};
