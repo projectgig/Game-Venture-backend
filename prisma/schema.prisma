@@ -28,6 +28,7 @@ model Company {
   agentProtect Boolean @default(false)
 
   lastLoggedIn DateTime?
+  deletedAt    DateTime?
 
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
@@ -41,6 +42,7 @@ model Company {
   GameSessionsAsPlayer GameSession[] @relation("PlayerGames")
   GameSessionsAsStore  GameSession[] @relation("StoreGames")
   payment              Payment[]
+  gamePlayers          GamePlayer[]
 
   @@map("companies")
 }
@@ -56,6 +58,24 @@ model CompanyConfig {
   gameControlMode GameControlMode @default(FAIR)
   updatedAt       DateTime        @updatedAt
   createdAt       DateTime        @default(now())
+}
+
+model GameRoom {
+  id       String       @id @default(cuid())
+  gameType GameType
+  status   GameStatus   @default(PENDING)
+  players  GamePlayer[]
+}
+
+model GamePlayer {
+  id         String   @id @default(cuid())
+  playerId   String
+  gameRoomId String
+  role       String? // player role
+  joinedAt   DateTime @default(now())
+
+  player   Company  @relation(fields: [playerId], references: [id])
+  gameRoom GameRoom @relation(fields: [gameRoomId], references: [id])
 }
 
 model GameSession {
@@ -163,6 +183,13 @@ enum Role {
   PLAYER
 }
 
+enum GameStatus {
+  PENDING
+  STARTED
+  ONGOING
+  DELETED
+}
+
 enum GameType {
   BLACKJACK
   POKER
@@ -181,6 +208,7 @@ enum GameResult {
 enum PaymentMerchant {
   PAYPAL
   STRIPE
+  ADMIN
 }
 
 enum PaymentStatus {
