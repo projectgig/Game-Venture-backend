@@ -5,7 +5,9 @@ import {
   LedgerType,
   GameResult,
   Status,
+  GameSession,
 } from "@prisma/client";
+import { StatusCodes } from "http-status-codes";
 
 const prisma = new PrismaClient();
 
@@ -42,7 +44,6 @@ function convertToCSV(data: any): string {
 export const getDownlineDashboard = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id as string;
-    const userRole = req.user?.role;
 
     const {
       startDate,
@@ -127,6 +128,11 @@ export const getDownlineDashboard = async (req: Request, res: Response) => {
     );
 
     const topPerformers = await getTopPerformers(downlineIds, dateFilter);
+    const userLoginHistory = await getUserLoginHistory(
+      currentUser.role,
+      downlineIds,
+      dateFilter
+    );
 
     const walletSummary = await getWalletSummary(allUserIds, downlineIds);
 
@@ -168,6 +174,7 @@ export const getDownlineDashboard = async (req: Request, res: Response) => {
       risk: riskMetrics,
       realTime: realTimeMetrics,
       downlineTree,
+      userLoginHistory,
       filters: {
         role: filters.role,
         status: filters.status,
@@ -634,6 +641,38 @@ async function getTopPerformers(downlineIds: string[], dateFilter: any) {
     topByCommissions: await enrichUser(topByCommissions, "companyId"),
     mostActiveGaming: await enrichUser(mostActiveGaming, "playerId"),
   };
+}
+
+async function getUserLoginHistory(
+  role: Role,
+  downlineIds: string[],
+  dateFilter: any
+) {
+  return prisma.companyActivity.findMany({
+    where: {
+      ...(role !== Role.ADMIN && { companyId: { in: downlineIds } }),
+      createdAt: dateFilter,
+    },
+    select: {
+      company: {
+        select: {
+          username: true,
+          role: true,
+          email: true,
+          contactNumber: true,
+          status: true,
+          isActive: true,
+          createdAt: true,
+        },
+      },
+      createdAt: true,
+      location: true,
+      device: true,
+      ip: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
 }
 
 // Wallet summary
@@ -1244,10 +1283,7 @@ export const getUserDetailedStats = async (req: Request, res: Response) => {
 };
 
 // comparative analysis
-export const getComparativeAnalysis = async (
-  req: Request,
-  res: Response
-) => {
+export const getComparativeAnalysis = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id as string;
     const { compareWith } = req.query;
@@ -1395,3 +1431,99 @@ function generateInsights(comparison: any): string[] {
 
   return insights;
 }
+
+export const getSalesAnalysis = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
+    }
+
+    const currentPeriodStart = new Date();
+    currentPeriodStart.setMonth(currentPeriodStart.getMonth() - 1);
+    const currentPeriodEnd = new Date();
+
+    const previousPeriodStart = new Date();
+    previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 2);
+    const previousPeriodEnd = new Date();
+    previousPeriodEnd.setMonth(previousPeriodEnd.getMonth() - 1);
+
+    const currentStats = (await getSalesStats(
+      userId,
+      currentPeriodStart,
+      currentPeriodEnd
+    )) as any[];
+    const previousStats = (await getSalesStats(
+      userId,
+      previousPeriodStart,
+      previousPeriodEnd
+    )) as any[];
+
+    const comparison = {
+      totalSales: {
+        current: currentStats.reduce((total, sale) => total + sale.amount, 0),
+        previous: previousStats.reduce((total, sale) => total + sale.amount, 0),
+        change:
+          currentStats.reduce((total, sale) => total + sale.amount, 0) -
+          previousStats.reduce((total, sale) => total + sale.amount, 0),
+        changePercent:
+          previousStats.reduce((total, sale) => total + sale.amount, 0) > 0
+            ? (
+                ((currentStats.reduce((total, sale) => total + sale.amount, 0) -
+                  previousStats.reduce(
+                    (total, sale) => total + sale.amount,
+                    0
+                  )) /
+                  previousStats.reduce(
+                    (total, sale) => total + sale.amount,
+                    0
+                  )) *
+                100
+              ).toFixed(2)
+            : 0,
+      },
+    };
+
+    return res.json({
+      period: {
+        current: { start: currentPeriodStart, end: currentPeriodEnd },
+        previous: { start: previousPeriodStart, end: previousPeriodEnd },
+      },
+      comparison,
+      insights: generateInsights(comparison),
+    });
+  } catch (error) {
+    console.error("Comparative analysis error:", error);
+    return res
+      .status(500)
+      .json({ error: "Failed to generate comparative analysis" });
+  }
+};
+
+const getSalesStats = async (userId: string, start: Date, end: Date) => {
+  try {
+    const getSales = await prisma.payment.findMany({
+      where: {
+        company: {
+          parentId: {
+            equals: userId,
+          },
+        },
+        createdAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+      select: {
+        amount: true,
+        company: true,
+      },
+    });
+
+    return getSales;
+  } catch (error) {
+    return error;
+  }
+};

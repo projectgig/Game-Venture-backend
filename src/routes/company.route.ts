@@ -6,7 +6,11 @@ import {
   updateUser,
   changePassword,
   toggleUserStatus,
+  getMe,
+  getUsersByParentId,
+  updateUserProfile,
 } from "../controllers/company/company.controller";
+
 import {
   getDownlineDashboard,
   getAdminDashboard,
@@ -908,9 +912,58 @@ router.get(
 
 /**
  * @swagger
+ * /api/company/downline/hierarchy/{parentId}:
+ *   get:
+ *     summary: Get downline users by parent ID
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: parentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "clz8p4xy1000a3k6g6jv5n2p9"
+ *     responses:
+ *       200:
+ *         description: Downline users fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Downline users fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/DownlineTree'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get(
+  "/downline/hierarchy/:parentId",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  getUsersByParentId
+);
+
+/**
+ * @swagger
  * /api/company/{id}:
  *   get:
- *     summary: Get single user by ID
+ *     summary: Get single company user by ID
  *     tags: [Company]
  *     security:
  *       - bearerAuth: []
@@ -920,18 +973,170 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
- *           example: 123
+ *         example: "clz8p4xy1000a3k6g6jv5n2p9"
  *     responses:
  *       200:
- *         description: User fetched successfully
+ *         description: Company user fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Company user fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "clz8p4xy1000a3k6g6jv5n2p9"
+ *                     username:
+ *                       type: string
+ *                       example: "demo_company"
+ *                     email:
+ *                       type: string
+ *                       example: "demo@company.com"
+ *                     status:
+ *                       type: string
+ *                       example: "ACTIVE"
+ *                     role:
+ *                       type: string
+ *                       example: "ADMIN"
+ *                     points:
+ *                       type: integer
+ *                       example: 1500
+ *                     isActive:
+ *                       type: boolean
+ *                       example: true
+ *                     contactNumber:
+ *                       type: string
+ *                       example: "+9779812345678"
+ *                     parent:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         username:
+ *                           type: string
+ *                           example: "main_admin"
+ *                         role:
+ *                           type: string
+ *                           example: "SUPER_ADMIN"
+ *                         contactNumber:
+ *                           type: string
+ *                           example: "+9779800000000"
+ *                         email:
+ *                           type: string
+ *                           example: "admin@maincompany.com"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-15T10:30:00.000Z"
+ *                     lastLoggedIn:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-11-09T08:15:00.000Z"
+ *                     remarks:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "Top-performing partner company"
  *       403:
  *         description: Access denied
  *       404:
- *         description: User not found
+ *         description: Company user not found
  *       401:
  *         description: Unauthorized
  */
 router.get("/:id", authenticateToken, requireCreatorOfParam("id"), getUser);
+
+/**
+ * @swagger
+ * /api/company/me/profile:
+ *   get:
+ *     summary: Get current user info
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Company user fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Company user fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "clz8p4xy1000a3k6g6jv5n2p9"
+ *                     username:
+ *                       type: string
+ *                       example: "demo_company"
+ *                     email:
+ *                       type: string
+ *                       example: "demo@company.com"
+ *                     status:
+ *                       type: string
+ *                       example: "ACTIVE"
+ *                     role:
+ *                       type: string
+ *                       example: "ADMIN"
+ *                     points:
+ *                       type: integer
+ *                       example: 1500
+ *                     isActive:
+ *                       type: boolean
+ *                       example: true
+ *                     contactNumber:
+ *                       type: string
+ *                       example: "+9779812345678"
+ *                     parent:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         username:
+ *                           type: string
+ *                           example: "main_admin"
+ *                         role:
+ *                           type: string
+ *                           example: "SUPER_ADMIN"
+ *                         contactNumber:
+ *                           type: string
+ *                           example: "+9779800000000"
+ *                         email:
+ *                           type: string
+ *                           example: "admin@maincompany.com"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-15T10:30:00.000Z"
+ *                     lastLoggedIn:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-11-09T08:15:00.000Z"
+ *                     remarks:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "Top-performing partner company"
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Company user not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.get("/me/profile", authenticateToken, getMe);
 
 /**
  * @swagger
@@ -1106,6 +1311,55 @@ router.post("/change-password", authenticateToken, changePassword);
 
 /**
  * @swagger
+ * /api/company/profile/update:
+ *   patch:
+ *     summary: Update user profile
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: johndoe_updated
+ *               contactNumber:
+ *                 type: string
+ *                 example: "+9779812345678"
+ *               email:
+ *                 type: string
+ *                 example: "johndoe_updated@me.com"
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Profile updated successfully"
+ *                 user:
+ *                   type: object
+ *                   description: The updated user object
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: User not found
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ * */
+router.patch("/profile/update", authenticateToken, updateUserProfile);
+
+/**
+ * @swagger
  * /api/company/downline/dashboard:
  *   get:
  *     summary: Get downline dashboard statistics
@@ -1197,7 +1451,7 @@ router.post("/change-password", authenticateToken, changePassword);
  *                           example: "ACTIVE"
  *                     overview:
  *                       type: object
- Horton: 
+ *                       properties:Horton:
  *                         properties:
  *                           totalDownline:
  *                             type: integer
@@ -1767,6 +2021,90 @@ router.post("/change-password", authenticateToken, changePassword);
  *                                 type: string
  *                                 format: date-time
  *                                 example: "2025-01-01T00:00:00Z"
+ *                     userLoginHistory:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           company:
+ *                             type: object
+ *                             properties:
+ *                               username:
+ *                                 type: string
+ *                                 example: "company_user"
+ *                               role:
+ *                                 type: string
+ *                                 example: "ADMIN"
+ *                               email:
+ *                                 type: string
+ *                                 example: "9FbOv@example.com"
+ *                               contactNumber:
+ *                                 type: string
+ *                                 example: "1234567890"
+ *                               status:
+ *                                 type: string
+ *                                 example: "ACTIVE"
+ *                               isActive:
+ *                                 type: boolean
+ *                                 example: true
+ *                               createdAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 example: "2025-01-01T00:00:00Z"
+ *                           ip:
+ *                             type: string
+ *                             example: "192.168.1.1"
+ *                           location:
+ *                             type: object
+ *                             properties:
+ *                               lat:
+ *                                 type: number
+ *                                 example: 37.7749
+ *                               lng:
+ *                                 type: number
+ *                                 example: -122.4194
+ *                           device:
+ *                             type: object
+ *                             properties:
+ *                               os:
+ *                                 type: object
+ *                                 properties:
+ *                                   name:
+ *                                     type: string
+ *                                     example: "iOS"
+ *                                   version:
+ *                                     type: string
+ *                                     example: "13.0"
+ *                               browser:
+ *                                 type: object
+ *                                 properties:
+ *                                   name:
+ *                                     type: string
+ *                                     example: "Chrome"
+ *                                   version:
+ *                                     type: string
+ *                                     example: "80.0"
+ *                                   major:
+ *                                     type: string
+ *                                     example: "80"
+ *                               engine:
+ *                                 type: object
+ *                                 properties:
+ *                                   name:
+ *                                     type: string
+ *                                     example: "WebKit"
+ *                                   version:
+ *                                     type: string
+ *                                     example: "537.36"
+ *                               cpu:
+ *                                 type: object
+ *                                 properties:
+ *                                   architecture:
+ *                                     type: string
+ *                                     example: "x86_64"
+ *                               ua:
+ *                                 type: string
+ *                                 example: "Mozilla/5.0 (iPhone; CPU iPhone OS 13_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1"
  *                     downlineTree:
  *                       type: object
  *                       properties:
@@ -2149,7 +2487,6 @@ router.get(
  * /api/company/downline/user/{targetUserId}:
  *   get:
  *     summary: Get detailed statistics for a specific user
- *     description: Retrieve detailed analytics for a specific user in the downline or the current user, respecting role hierarchy.
  *     tags: [Company]
  *     security:
  *       - bearerAuth: []
@@ -2377,6 +2714,7 @@ router.get(
  *                   type: string
  *                   example: "Failed to fetch user details"
  */
+
 router.get(
   "/downline/user/:targetUserId",
   authenticateToken,
@@ -2433,7 +2771,6 @@ router.get(
  *                               format: date-time
  *                               example: "2024-12-01T00:00:00Z"
  *                             end:
-:
  *                               type: string
  *                               format: date-time
  *                               example: "2024-12-31T23:59:59Z"
@@ -2546,42 +2883,60 @@ router.get(
 /**
  * @swagger
  * components:
- *   schemas:
- *     DownlineTree:
- *       type: object
- *       properties:
- *         id:
- *           type: string
- *           example: "user123"
- *         username:
- *           type: string
- *           example: "admin_user"
- *         role:
- *           type: string
- *           example: "ADMIN"
- *         status:
- *           type: string
- *           example: "ACTIVE"
- *         balance:
- *           type: number
- *           example: 1000
- *         points:
- *           type: number
- *           example: 1000
- *         childrenCount:
- *           type: integer
- *           example: 10
- *         gamesPlayed:
- *           type: integer
- *           example: 50
- *         createdAt:
- *           type: string
- *           format: date-time
- *           example: "2025-01-01T00:00:00Z"
- *         children:
- *           type: array
- *           items:
- *             $ref: '#/components/schemas/DownlineTree'
+ *   responses:
+ *     Unauthorized:
+ *       description: Unauthorized
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "Unauthorized"
+ *     NotFound:
+ *       description: User not found
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "User not found"
+ *     Forbidden:
+ *       description: Forbidden (e.g., invalid role filter or role hierarchy violation)
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "Cannot filter by equal or higher role"
+ *     InternalServerError:
+ *       description: Internal server error
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               error:
+ *                 type: string
+ *                 example: "Internal server error"
+ *     DashboardSuccess:
+ *       description: Dashboard data fetched successfully
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               data:
+ *                 $ref: '#/components/schemas/DashboardData'
+ *               message:
+ *                 type: string
+ *                 example: "Dashboard data fetched successfully"
+ *
  *   parameters:
  *     startDate:
  *       in: query
@@ -2589,14 +2944,14 @@ router.get(
  *       schema:
  *         type: string
  *         format: date-time
- *       description: Start date for filtering data (e.g., '2025-01-01T00:00:00Z')
+ *       description: Start date for filtering data
  *     endDate:
  *       in: query
  *       name: endDate
  *       schema:
  *         type: string
  *         format: date-time
- *       description: End date for filtering data (e.g., '2025-12-31T23:59:59Z')
+ *       description: End date for filtering data
  *     role:
  *       in: query
  *       name: role
@@ -2624,63 +2979,37 @@ router.get(
  *         type: string
  *         enum: [7d, 30d, 90d, 1y]
  *         default: 30d
- *       description: Predefined date range for filtering (e.g., '7d' for last 7 days)
- *   responses:
- *     DashboardSuccess:
- *       description: Dashboard data fetched successfully
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               data:
- *                 $ref: '#/components/schemas/DashboardData'
- *               message:
- *                 type: string
- *                 example: "Dashboard data fetched successfully"
- *     Unauthorized:
- *       description: Unauthorized
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               error:
- *                 type: string
- *                 example: "Unauthorized"
- *     Forbidden:
- *       description: Forbidden (e.g., invalid role filter or role hierarchy violation)
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               error:
- *                 type: string
- *                 example: "Cannot filter by equal or higher role"
- *     NotFound:
- *       description: User not found
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               error:
- *                 type: string
- *                 example: "User not found"
- *     InternalServerError:
- *       description: Internal server error
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               error:
- *                 type: string
- *                 example: "Internal server error"
+ *       description: Predefined date range
+ *
  *   schemas:
- *     DashboardData:
+ *     DownlineTree:
  *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *         username:
+ *           type: string
+ *         role:
+ *           type: string
+ *         status:
+ *           type: string
+ *         balance:
+ *           type: number
+ *         points:
+ *           type: number
+ *         childrenCount:
+ *           type: integer
+ *         gamesPlayed:
+ *           type: integer
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         children:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/DownlineTree'
+ *     DashboardData:
+ *       type: :object
  *       properties:
  *         period:
  *           type: object
@@ -2688,32 +3017,24 @@ router.get(
  *             startDate:
  *               type: string
  *               format: date-time
- *               example: "2025-01-01T00:00:00Z"
  *             endDate:
  *               type: string
  *               format: date-time
- *               example: "2025-01-31T23:59:59Z"
  *             label:
  *               type: string
- *               example: "30d"
  *         currentUser:
  *           type: object
  *           properties:
  *             id:
  *               type: string
- *               example: "user123"
  *             username:
  *               type: string
- *               example: "admin_user"
  *             role:
  *               type: string
- *               example: "ADMIN"
  *             points:
  *               type: number
- *               example: 1000
  *             status:
  *               type: string
- *               example: "ACTIVE"
  *         overview:
  *           $ref: '#/components/schemas/OverviewStats'
  *         hierarchy:
@@ -2745,10 +3066,8 @@ router.get(
  *           properties:
  *             role:
  *               type: string
- *               example: "PLAYER"
  *             status:
  *               type: string
- *               example: "ACTIVE"
  *             gameType:
  *               type: string
  *               example: "SLOTS"

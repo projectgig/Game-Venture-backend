@@ -7,7 +7,6 @@ import { StatusCodes } from "http-status-codes";
 import loggerInstance from "@game/common/logger/logger.service";
 import { handleETag } from "@game/utils/etagUtil";
 
-// check if targetId is in my hierarchy
 async function isInMyHierarchy(
   myId: string,
   targetId: string
@@ -247,11 +246,23 @@ export const getUser = async (req: Request, res: Response) => {
         select: {
           id: true,
           username: true,
+          email: true,
+          status: true,
           role: true,
           points: true,
           isActive: true,
           contactNumber: true,
-          parentId: true,
+          parent: {
+            select: {
+              username: true,
+              role: true,
+              contactNumber: true,
+              email: true,
+            },
+          },
+          createdAt: true,
+          lastLoggedIn: true,
+          remarks: true,
         },
       },
       { ttl: 60 }
@@ -277,10 +288,63 @@ export const getUser = async (req: Request, res: Response) => {
 
     return res.json({
       message: "User fetched successfully",
-      user: targetUser,
+      data: targetUser,
     });
   } catch (err) {
     loggerInstance.error(`Get user error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
+  }
+};
+
+export const getMe = async (req: Request, res: Response) => {
+  try {
+    const currentUser = req.user;
+
+    if (!currentUser)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
+
+    const user = await db.findUnique<Company>("company", {
+      where: { id: currentUser.id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        status: true,
+        role: true,
+        points: true,
+        isActive: true,
+        contactNumber: true,
+        parent: {
+          select: {
+            username: true,
+            role: true,
+            contactNumber: true,
+            email: true,
+          },
+        },
+        twoFactorEnabled: true,
+        createdAt: true,
+        lastLoggedIn: true,
+        remarks: true,
+      },
+    });
+
+    if (!user) {
+      return res
+        .status(StatusCodes.NOT_FOUND)
+        .json({ message: "User not found" });
+    }
+
+    return res.json({
+      message: "User fetched successfully",
+      data: user,
+    });
+  } catch (err) {
+    loggerInstance.error(`Get me error:, ${err}`);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json({ message: "Internal server error" });
@@ -342,6 +406,48 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+export const updateUserProfile = async (req: Request, res: Response) => {
+  try {
+    const currentUser = req.user;
+    if (!currentUser)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
+
+    const target = await db.findUnique<Company>(
+      "company",
+      { where: { id: currentUser.id } },
+      { ttl: 60 }
+    );
+
+    if (!target) return res.status(404).json({ message: "User not found" });
+
+    const { ...safeUpdates } = req.body;
+
+    const updated = (await db.update<Company>("company", {
+      where: { id: currentUser.id },
+      data: safeUpdates,
+    })) as Company;
+
+    return res.json({
+      message: "User updated successfully",
+      user: {
+        id: updated.id,
+        username: updated.username,
+        email: updated.email,
+        contactNumber: updated.contactNumber,
+        role: updated.role,
+        points: updated?.points || 0,
+      },
+    });
+  } catch (err) {
+    loggerInstance.error(`Update user error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
+  }
+};
+
 export const changePassword = async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -367,7 +473,7 @@ export const changePassword = async (req: Request, res: Response) => {
 
     const valid = await bcrypt.compare(oldPassword, company.password);
     if (!valid)
-      return res.status(401).json({ message: "Invalid old password" });
+      return res.status(400).json({ message: "Invalid old password" });
 
     const hashed = await bcrypt.hash(newPassword, 10);
     await db.update<Company>("company", {
@@ -509,6 +615,38 @@ export const deletedUser = async (req: Request, res: Response) => {
     return res.json({ message: "User deleted successfully" });
   } catch (err) {
     loggerInstance.error(`Delete user error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
+  }
+};
+
+export const getUsersByParentId = async (req: Request, res: Response) => {
+  try {
+    const currentUser = req.user;
+    if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
+
+    let hasAccess = false;
+
+    if (currentUser.role === "ADMIN") {
+      hasAccess = true;
+    } else {
+      hasAccess = await isInMyHierarchy(currentUser.id, req.params.parentId);
+    }
+
+    if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+    const { parentId } = req.params;
+
+    const users = await db.findMany<Company>(
+      "company",
+      { where: { parentId } },
+      { ttl: 60 }
+    );
+
+    return res.json(users);
+  } catch (err) {
+    loggerInstance.error(`Get users by parent id error:, ${err}`);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json({ message: "Internal server error" });

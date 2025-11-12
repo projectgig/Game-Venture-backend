@@ -1,5 +1,17 @@
 import { Router } from "express";
-import { login, logout, refreshToken } from "../controllers/auth.controller";
+import {
+  approveRecovery,
+  disable2FA,
+  enable2FA,
+  getBackupCodes,
+  login,
+  logout,
+  refreshToken,
+  requestRecovery,
+  setup2FA,
+  verify2FA,
+} from "../controllers/auth.controller";
+import { authenticateToken } from "@game/common/middleware/auth.middleware";
 
 /**
  * @swagger
@@ -66,5 +78,17 @@ router.post("/logout", logout);
  *         description: Unauthorized
  */
 router.post("/refreshToken", refreshToken);
+router.post("/2fa/verify", verify2FA);
+
+router.use(authenticateToken);
+
+router.post("/2fa/setup", setup2FA);
+router.post("/2fa/enable", enable2FA);
+router.post("/2fa/disable", disable2FA);
+router.get("/2fa/backup-codes", getBackupCodes);
+router.post("/2fa/recovery/request", requestRecovery);
+
+// Admin route
+router.post("/2fa/recovery/approve/:recoveryId", approveRecovery);
 
 export const authRoutes = router;

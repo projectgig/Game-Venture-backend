@@ -37,12 +37,21 @@ model Company {
   Ledger          Ledger[]
   CompanyConfig   CompanyConfig?
 
+  twoFactorEnabled Boolean          @default(false)
+  twoFactorMethod  TwoFactorMethod?
+  twoFactorSecret  String? // encrypted secret (for TOTP) - ciphertext
+  twoFactorEmail   String? // email used specifically for 2FA if desired
+
   AuditLog AuditLog[]
 
-  GameSessionsAsPlayer GameSession[] @relation("PlayerGames")
-  GameSessionsAsStore  GameSession[] @relation("StoreGames")
+  GameSessionsAsPlayer GameSession[]       @relation("PlayerGames")
+  GameSessionsAsStore  GameSession[]       @relation("StoreGames")
   payment              Payment[]
   gamePlayers          GamePlayer[]
+  twoFactorOTPs        TwoFactorOTP[]
+  rememberedDevices    RememberedDevice[]
+  twoFactorRecoveries  TwoFactorRecovery[]
+  backupCodes          BackupCode[]
 
   @@map("companies")
 }
@@ -156,6 +165,52 @@ model AuditLog {
   createdAt DateTime @default(now())
 }
 
+model TwoFactorOTP {
+  id        String   @id @default(cuid())
+  companyId String
+  codeHash  String // hashed OTP for fallback/email flow (if used)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+}
+
+model RememberedDevice {
+  id        String   @id @default(cuid())
+  companyId String
+  deviceId  String // hashed device identifier
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, deviceId])
+}
+
+model TwoFactorRecovery {
+  id         String         @id @default(cuid())
+  companyId  String
+  tokenHash  String
+  status     RecoveryStatus @default(PENDING)
+  createdAt  DateTime       @default(now())
+  reviewedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
+model BackupCode {
+  id        String   @id @default(cuid())
+  companyId String
+  codeHash  String
+  redeemed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
 enum GameControlMode {
   FAIR
   CONTROLLED
@@ -216,4 +271,16 @@ enum PaymentStatus {
   CANCELLED
   PENDING
   REFUNDED
+}
+
+enum TwoFactorMethod {
+  EMAIL
+  SMS
+}
+
+enum RecoveryStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
