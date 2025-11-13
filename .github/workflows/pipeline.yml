@@ -72,7 +72,7 @@ jobs:
 
             IMAGE="${{ env.VENTURE_IMAGE_NAME }}:dev-latest"
             NETWORK="venture-staging-network"
-            ENV_FILE="${{ secrets.VENTURE_ENV_STAGING }}"
+            ENV_FILE="/root/venture/.env.development"
             COMMIT_SHA="${{ github.sha }}"
             API_CONTAINER="venture-api-staging"
             REDIS_CONTAINER="venture-redis-staging"
