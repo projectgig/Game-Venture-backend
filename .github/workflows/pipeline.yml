@@ -79,11 +79,11 @@ jobs:
             API_PORT="${{ env.STAGING_PORT }}"
 
             # === Validate .env.development ===
-            if [ ! -f "$ENV_FILE" ]; then
-              echo "Error: .env file not found at $ENV_FILE"
-              exit 1
-            fi
-            echo "COMMIT_SHA=$COMMIT_SHA" >> "$ENV_FILE"
+            # if [ ! -f "$ENV_FILE" ]; then
+            #   echo "Error: .env file not found at $ENV_FILE"
+            #   exit 1
+            # fi
+            # echo "COMMIT_SHA=$COMMIT_SHA" >> "$ENV_FILE"
 
             # === Pull image ===
             echo "Pulling $IMAGE..."
@@ -145,7 +145,8 @@ jobs:
             echo "Running database migrations..."
             docker run --rm \
               --network "$NETWORK" \
-              --env-file "$ENV_FILE" \
+              --env-file /root/venture/.env.development \
+              --user root \
               "$IMAGE" \
               npx prisma migrate deploy || echo "Warning: No migrations or failed (continuing)"
 
@@ -159,7 +160,8 @@ jobs:
               --name "$API_CONTAINER" \
               --network "$NETWORK" \
               -p "$API_PORT:$API_PORT" \
-              --env-file "$ENV_FILE" \
+              --env-file /root/venture/.env.development \
+              --user root \
               --restart unless-stopped \
               "$IMAGE"
 
