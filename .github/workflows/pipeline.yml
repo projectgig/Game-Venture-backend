@@ -69,7 +69,6 @@ jobs:
           key: ${{ secrets.VENTURE_SSH_KEY }}
           script: |
             set -e
-
             IMAGE="${{ env.VENTURE_IMAGE_NAME }}:dev-latest"
             NETWORK="venture-staging-network"
             ENV_FILE="/root/venture/.env.development"
@@ -79,7 +78,7 @@ jobs:
             REDIS_PORT=6380
             API_PORT="${{ env.STAGING_PORT }}"
 
-            # === Validate .env ===
+            # === Validate .env.development ===
             if [ ! -f "$ENV_FILE" ]; then
               echo "Error: .env file not found at $ENV_FILE"
               exit 1
