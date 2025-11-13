@@ -189,7 +189,7 @@ jobs:
             echo "=== Cleaning up unused images ==="
             docker image prune -f
 
-            echo "------------------ Staging deployment SUCCESSFUL! ------------------"
+            echo "--------------- Staging deployment SUCCESSFUL! ---------------"
             echo "API: http://$(hostname):$API_PORT"
             echo "Redis: $(hostname):$REDIS_PORT"
 
