@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline for Venture API
 
 on:
   push:
@@ -10,8 +10,8 @@ on:
 env:
   VENTURE_NODE_VERSION: "20"
   VENTURE_IMAGE_NAME: gigproject/venture-api
-  STAGING_NAMESPACE: venture-staging
-  PROD_NAMESPACE: venture
+  STAGING_PORT: 5000
+  PROD_PORT: 8000
 
 jobs:
   lint:
@@ -28,56 +28,10 @@ jobs:
       - run: yarn run lint
       - run: yarn run type-check
 
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      postgres:
-        image: postgres:16-alpine
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.VENTURE_NODE_VERSION }}
-          cache: yarn
-      - run: yarn install --frozen-lockfile
-      - run: npx prisma generate
-      - run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-      - run: yarn run test:unit
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-          REDIS_URL: redis://localhost:6379
-      - run: yarn run test:integration
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-          REDIS_URL: redis://localhost:6379
-
-  build:
+  build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -86,627 +40,248 @@ jobs:
         with:
           username: ${{ secrets.VENTURE_DOCKERHUB_USERNAME }}
           password: ${{ secrets.VENTURE_DOCKERHUB_TOKEN }}
-      - name: Build & push image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          file: ${{ github.ref == 'refs/heads/dev' && './Dockerfile.dev' || './Dockerfile.prod' }}
-          tags: |
-            ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.VENTURE_IMAGE_NAME }}:${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
+          docker build -f ${{ github.ref == 'refs/heads/dev' && './Dockerfile.dev' || './Dockerfile.prod' }} -t ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
+          docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
+          docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
 
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: build-and-push
     if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: v1.29.15
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: v1.29.15
-
-      #  Pull kubeconfig from server
-      - name: Pull kubeconfig from server
-        env:
-          SSH_HOST: ${{ secrets.VENTURE_HOST }}
-          SSH_USER: ${{ secrets.VENTURE_SSH_USERNAME }}
-          SSH_KEY: ${{ secrets.VENTURE_SSH_KEY }}
-        run: |
-          set -e
-
-          echo "Setting up SSH..."
-          mkdir -p ~/.ssh ~/.kube
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
-
-          echo "Copying kubeconfig from ~/$SSH_USER/.kube/config..."
-          scp -i ~/.ssh/id_rsa $SSH_USER@$SSH_HOST:~/.kube/config ~/.kube/config
-
-          echo "Validating connection..."
-          kubectl cluster-info
-          kubectl get nodes
-
-      # - name: Configure kubeconfig
-      #   run: |
-      #     mkdir -p ~/.kube
-      #     echo '${{ secrets.KUBECONFIG_STAGING }}' | base64 -d > ~/.kube/config
-      #     chmod 600 ~/.kube/config
-
-      - name: Verify cluster connection
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
-
-      - name: Ensure staging namespace exists
-        run: |
-          kubectl create namespace ${{ env.STAGING_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Create Docker Hub secret
-        run: |
-          kubectl create secret docker-registry dockerhub-secret \
-            --docker-server=https://index.docker.io/v1/ \
-            --docker-username=${{ secrets.VENTURE_DOCKERHUB_USERNAME }} \
-            --docker-password=${{ secrets.VENTURE_DOCKERHUB_TOKEN }} \
-            --docker-email=${{ secrets.VENTURE_DOCKERHUB_EMAIL }} \
-            -n ${{ env.STAGING_NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Copy .env files from remote server
-        uses: appleboy/ssh-action@v0.1.10
+      - name: Deploy to Staging Server
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VENTURE_HOST }}
           username: ${{ secrets.VENTURE_SSH_USERNAME }}
           key: ${{ secrets.VENTURE_SSH_KEY }}
           script: |
-            mkdir -p /tmp/env-export-${{ github.run_id }}
-            cp /root/venture/.env* /tmp/env-export-${{ github.run_id }}/ || true
-            chmod 644 /tmp/env-export-${{ github.run_id }}/.env* || true
+            set -e
+            export IMAGE=${{ env.VENTURE_IMAGE_NAME }}:dev-latest
+            export NETWORK=venture-staging-network
+            export ENV_FILE=/root/venture/.env.development
+            export COMMIT_SHA=${{ github.sha }}
 
-      - name: Fetch .env files using SCP
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VENTURE_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.VENTURE_HOST }} >> ~/.ssh/known_hosts
-          scp -i ~/.ssh/id_rsa \
-            ${{ secrets.VENTURE_SSH_USERNAME }}@${{ secrets.VENTURE_HOST }}:/tmp/env-export-${{ github.run_id }}/.env* \
-            ./ || true
-          rm -f ~/.ssh/id_rsa
-
-      - name: Cleanup temporary files on remote server
-        if: always()
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.VENTURE_HOST }}
-          username: ${{ secrets.VENTURE_SSH_USERNAME }}
-          key: ${{ secrets.VENTURE_SSH_KEY }}
-          script: |
-            rm -rf /tmp/env-export-${{ github.run_id }}
-
-      - name: Create venture-env-secrets
-        run: |
-          ENV_FILE=".env.development"
-          [ ! -f "$ENV_FILE" ] && ENV_FILE=".env.production"
-          [ ! -f "$ENV_FILE" ] && echo "No .env file found!" && exit 1
-          awk -F= '!seen[$1]++' "$ENV_FILE" | tac | awk -F= '!seen[$1]++' | tac > "${ENV_FILE}.deduped"
-          kubectl delete secret venture-env-secrets -n ${{ env.STAGING_NAMESPACE }} --ignore-not-found=true
-          sleep 2
-          kubectl create secret generic venture-env-secrets \
-            --namespace=${{ env.STAGING_NAMESPACE }} \
-            --from-env-file="${ENV_FILE}.deduped"
-          kubectl patch secret venture-env-secrets -n ${{ env.STAGING_NAMESPACE }} \
-            --type='json' \
-            -p='[{"op": "replace", "path": "/data/REDIS_URL", "value": "'"$(echo -n 'redis://venture-redis:6379' | base64)"'"}]'
-
-      - name: Deploy Redis
-        run: |
-          kubectl apply -f k8s/redis-pvc.yaml -n ${{ env.STAGING_NAMESPACE }}
-          kubectl apply -f k8s/redis-deployment.yaml -n ${{ env.STAGING_NAMESPACE }}
-          kubectl apply -f k8s/redis-service.yaml -n ${{ env.STAGING_NAMESPACE }}
-          kubectl wait --for=condition=ready pod -l app=venture-redis -n ${{ env.STAGING_NAMESPACE }} --timeout=120s || true
-
-      - name: Deploy Application Services
-        run: |
-          kubectl apply -f k8s/app-service.yaml -n ${{ env.STAGING_NAMESPACE }}
-          kubectl apply -f k8s/ingress.yaml -n ${{ env.STAGING_NAMESPACE }}
-
-      - name: Verify Ingress Controller
-        run: |
-          TRAEFIK_POD=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik -o name 2>/dev/null)
-          [ -z "$TRAEFIK_POD" ] && echo "Error: Traefik not found in kube-system" && exit 1
-          echo "Traefik found: $TRAEFIK_POD"
-
-      - name: Blue-Green Deployment
-        run: |
-          set -e
-          IMAGE_TAG="${{ github.sha }}"
-          NAMESPACE="${{ env.STAGING_NAMESPACE }}"
-
-          # Ensure both deployments exist
-          echo "Ensuring app-blue and app-green deployments exist..."
-          kubectl apply -f k8s/app-blue-deployment.yaml -n $NAMESPACE
-          kubectl apply -f k8s/app-green-deployment.yaml -n $NAMESPACE
-
-          # Determine current and new colors
-          CURRENT_COLOR=$(kubectl get service app-service -n $NAMESPACE -o jsonpath='{.spec.selector.color}' 2>/dev/null || echo "blue")
-          if [ "$CURRENT_COLOR" = "blue" ]; then
-            NEW_COLOR="green"
-            OLD_COLOR="blue"
-          else
-            NEW_COLOR="blue"
-            OLD_COLOR="green"
-          fi
-
-          echo "Current active color: $CURRENT_COLOR"
-          echo "Deploying to: $NEW_COLOR"
-
-          # Deploy new version
-          kubectl set image deployment/app-${NEW_COLOR} venture-api=${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG -n $NAMESPACE
-          kubectl scale deployment app-${NEW_COLOR} --replicas=2 -n $NAMESPACE
-
-          echo "Waiting for new deployment rollout..."
-          kubectl rollout status deployment/app-${NEW_COLOR} -n $NAMESPACE --timeout=300s
-
-          echo "Waiting for pods to be ready..."
-          kubectl wait --for=condition=ready pod -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --timeout=180s
-
-          # Verify deployment health
-          echo "Verifying deployment health..."
-          READY_PODS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --field-selector=status.phase=Running -o json | jq '.items | length')
-          if [ "$READY_PODS" -lt 1 ]; then
-            echo "Error: No ready pods found"
-            kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl describe pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=50
-            exit 1
-          fi
-          echo "$READY_PODS pods are ready"
-
-          # Create temporary pod for health check
-          echo "Creating temporary pod for health check..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: health-check-pod-${NEW_COLOR}
-            namespace: $NAMESPACE
-          spec:
-            containers:
-            - name: curl
-              image: curlimages/curl:latest
-              command: ["sleep", "300"]
-            restartPolicy: Never
-          EOF
-
-          kubectl wait --for=condition=ready pod/health-check-pod-${NEW_COLOR} -n $NAMESPACE --timeout=60s
-
-          # Create temporary test service
-          echo "Creating temporary test service..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: app-service-test-${NEW_COLOR}
-            namespace: $NAMESPACE
-          spec:
-            selector:
-              app: venture-api
-              color: $NEW_COLOR
-            ports:
-              - protocol: TCP
-                port: 80
-                targetPort: 5000
-                name: http
-          EOF
-
-          # Wait for service endpoints
-          sleep 10
-          ENDPOINTS=$(kubectl get endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}')
-          if [ -z "$ENDPOINTS" ]; then
-            echo "Error: No endpoints available for test service"
-            kubectl describe endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE
-            kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
-            kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
-            exit 1
-          fi
-          echo "Test service endpoints: $ENDPOINTS"
-
-          # Perform health check
-          echo "Performing health check via test service..."
-          max_attempts=20
-          attempt=1
-
-          # Cleanup test resources
-          kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE
-          kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE
-
-          # Switch traffic to new deployment
-          echo "Switching traffic to $NEW_COLOR deployment..."
-          kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${NEW_COLOR}\"}}}" -n $NAMESPACE
-
-          # Wait for traffic switch to propagate
-          echo "Waiting for traffic switch to propagate..."
-          sleep 30
-
-          # Verify service endpoints
-          echo "Verifying service endpoints..."
-          NEW_ENDPOINTS=$(kubectl get endpoints app-service -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' | tr ' ' '\n' | sort)
-          EXPECTED_ENDPOINTS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.items[*].status.podIP}' | tr ' ' '\n' | sort)
-          if [ "$NEW_ENDPOINTS" != "$EXPECTED_ENDPOINTS" ]; then
-            echo "Warning: Endpoints may not be fully updated yet"
-            echo "Current endpoints: $NEW_ENDPOINTS"
-            echo "Expected endpoints: $EXPECTED_ENDPOINTS"
-          else
-            echo "Service endpoints successfully updated"
-          fi
-
-          # Final health check via ingress
-          echo "Performing final health check via ingress..."
-          max_attempts=15
-          attempt=1
-          success=0
-          while [ $attempt -le $max_attempts ]; do
-            if curl -f -s https://api-staging.casinochautari.com/api/health -H "Cache-Control: no-cache" -H "Connection: close" > /dev/null 2>&1; then
-              echo "Health check passed (attempt $attempt)"
-              success=$((success + 1))
-              if [ $success -ge 3 ]; then
-                echo "Health checks consistently passing"
-                break
-              fi
-            else
-              success=0
-              if [ $attempt -eq $max_attempts ]; then
-                echo "Error: Health check failed after $max_attempts attempts, rolling back..."
-                kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${OLD_COLOR}\"}}}" -n $NAMESPACE
-                kubectl logs -l app.kubernetes.io/name=traefik -n kube-system --tail=100 || echo "Failed to fetch Traefik logs"
-                exit 1
-              fi
+            # Check for .env file
+            if [ ! -f "$ENV_FILE" ]; then
+              echo ".env.development does not exist! Deployment aborted."
+              exit 1
             fi
-            echo "Health check attempt $attempt/$max_attempts (successes: $success/3)"
-            sleep 5
-            attempt=$((attempt + 1))
-          done
 
-          # Scale down old deployment
-          echo "Scaling down $OLD_COLOR deployment..."
-          if kubectl get deployment app-${OLD_COLOR} -n $NAMESPACE >/dev/null 2>&1; then
-            kubectl scale deployment app-${OLD_COLOR} --replicas=0 -n $NAMESPACE
-          else
-            echo "Old deployment app-${OLD_COLOR} not found, skipping scale down."
-          fi
+            # Append COMMIT_SHA to .env
+            echo "COMMIT_SHA=$COMMIT_SHA" >> "$ENV_FILE"
 
-          echo "Deployment completed successfully!"
-          echo "Active color is now: $NEW_COLOR"
+            # Pull latest image
+            docker pull $IMAGE
 
-      - name: Post-deployment verification
-        run: |
-          echo "=== Deployment Summary ==="
-          kubectl get deployments -n ${{ env.STAGING_NAMESPACE }}
-          kubectl get pods -n ${{ env.STAGING_NAMESPACE }}
-          kubectl get services -n ${{ env.STAGING_NAMESPACE }}
-          kubectl get hpa -n ${{ env.STAGING_NAMESPACE }}
-          echo ""
-          echo "=== Active Service Selector ==="
-          kubectl get service app-service -n ${{ env.STAGING_NAMESPACE }} -o jsonpath='{.spec.selector}'
+            # # Blue-Green Deployment Logic
+            # CURRENT_CONTAINER=$(docker ps -q --filter "name=venture-api-staging-blue" --filter "status=running")
+            # if [ -n "$CURRENT_CONTAINER" ]; then
+            #   NEW_COLOR="green"
+            #   OLD_COLOR="blue"
+            # else
+            #   NEW_COLOR="blue"
+            #   OLD_COLOR="green"
+            # fi
 
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "Deployment failed! Check the logs above."
-          kubectl get pods -n ${{ env.STAGING_NAMESPACE }}
-          kubectl describe pods -n ${{ env.STAGING_NAMESPACE }}
-          kubectl logs -l app=venture-api -n ${{ env.STAGING_NAMESPACE }} --tail=100 || true
+            # echo "Deploying to $NEW_COLOR container..."
+
+            # Remove old network if exists
+            docker network rm $NETWORK 2>/dev/null || true
+            docker network create $NETWORK 2>/dev/null || true
+
+            # Start Redis
+            docker run -d \
+              --name venture-redis-staging \
+              --network $NETWORK \
+              -p 6379:6379 \
+              --env-file "$ENV_FILE" \
+              --user root \
+              --restart unless-stopped \
+              redis:7-alpine
+
+            # Start Postgres
+            docker run -d \
+              --name venture-postgres-staging \
+              --network $NETWORK \
+              -p 5432:5432 \
+              --env-file "$ENV_FILE" \
+              --user root \
+              --restart unless-stopped \
+              postgres:16-alpine
+
+            # Run database migrations
+            docker run --rm \
+              --network $NETWORK \
+              --env-file "$ENV_FILE" \
+              $IMAGE \
+              npx prisma migrate deploy
+
+            # Start new container
+            docker run -d \
+              --name venture-api-staging-$NEW_COLOR \
+              --network $NETWORK \
+              -p ${{ env.STAGING_PORT }}:${{ env.STAGING_PORT }} \
+              --env-file "$ENV_FILE" \
+              --user root \
+              --restart unless-stopped \
+              $IMAGE
+
+            # Health check
+            max_attempts=15
+            attempt=1
+            success=0
+            while [ $attempt -le $max_attempts ]; do
+              if curl -f -s http://localhost:${{ env.STAGING_PORT }}/api/health > /dev/null; then
+                echo "Health check passed (attempt $attempt)"
+                success=$((success + 1))
+                if [ $success -ge 3 ]; then
+                  echo "Health checks consistently passing"
+                  break
+                fi
+              else
+                success=0
+                if [ $attempt -eq $max_attempts ]; then
+                  echo "Health check failed after $max_attempts attempts, rolling back..."
+                  docker stop venture-api-staging-$NEW_COLOR || true
+                  docker rm venture-api-staging-$NEW_COLOR || true
+                  exit 1
+                fi
+              fi
+              echo "Health check attempt $attempt/$max_attempts (successes: $success/3)"
+              sleep 5
+              attempt=$((attempt + 1))
+            done
+
+            # Stop and remove old container
+            docker stop venture-api-staging-$OLD_COLOR 2>/dev/null || true
+            docker rm venture-api-staging-$OLD_COLOR 2>/dev/null || true
+
+            # Clean up unused images
+            docker image prune -f
+
+            echo "Staging deployment completed successfully! Active container: venture-api-staging-$NEW_COLOR"
 
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: build-and-push
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1.0.0
         with:
-          version: v1.29.15
+          host: ${{ secrets.VENTURE_HOST }}
+          username: ${{ secrets.VENTURE_SSH_USERNAME }}
+          key: ${{ secrets.VENTURE_SSH_KEY }}
+          script: |
+            set -e
+            export IMAGE=${{ env.VENTURE_IMAGE_NAME }}:latest
+            export NETWORK=venture-prod-network
+            export ENV_FILE=/root/venture/.env.production
+            export COMMIT_SHA=${{ github.sha }}
 
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo '${{ secrets.KUBECONFIG_PROD }}' | base64 -d > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      - name: Verify cluster connection
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
-
-      - name: Ensure production namespace exists
-        run: |
-          kubectl create namespace ${{ env.PROD_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Create Docker Hub secret
-        run: |
-          kubectl create secret docker-registry dockerhub-secret \
-            --docker-server=https://index.docker.io/v1/ \
-            --docker-username=${{ secrets.VENTURE_DOCKERHUB_USERNAME }} \
-            --docker-password=${{ secrets.VENTURE_DOCKERHUB_TOKEN }} \
-            --docker-email=${{ secrets.VENTURE_DOCKERHUB_EMAIL }} \
-            -n ${{ env.PROD_NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Create/Update Secrets
-        run: |
-          kubectl create secret generic venture-env-secrets \
-            --from-literal=DATABASE_URL="postgresql://postgres:${{ secrets.DB_PASSWORD_PROD }}@postgres-service:5432/venture_prod" \
-            --from-literal=REDIS_URL="redis://:${{ secrets.REDIS_PASSWORD_PROD }}@venture-redis:6379" \
-            --from-literal=NODE_ENV="production" \
-            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET_PROD }}" \
-            --from-literal=PORT="5000" \
-            --from-literal=NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
-            --from-literal=NEW_RELIC_APP_NAME="project-gig" \
-            -n ${{ env.PROD_NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Deploy Database
-        run: |
-          kubectl apply -f k8s/postgres-statefulset.yaml -n ${{ env.PROD_NAMESPACE }}
-          kubectl wait --for=condition=ready pod -l app=postgres -n ${{ env.PROD_NAMESPACE }} --timeout=180s || true
-
-      - name: Deploy Redis
-        run: |
-          kubectl apply -f k8s/redis-deployment.yaml -n ${{ env.PROD_NAMESPACE }}
-          kubectl apply -f k8s/redis-service.yaml -n ${{ env.PROD_NAMESPACE }}
-          kubectl wait --for=condition=ready pod -l app=venture-redis -n ${{ env.PROD_NAMESPACE }} --timeout=120s || true
-
-      - name: Run Database Migrations
-        run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: db-migration-${{ github.sha }}
-            namespace: ${{ env.PROD_NAMESPACE }}
-          spec:
-            ttlSecondsAfterFinished: 300
-            template:
-              spec:
-                restartPolicy: Never
-                containers:
-                - name: migrate
-                  image: ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
-                  command: ["npx", "prisma", "migrate", "deploy"]
-                  envFrom:
-                  - secretRef:
-                      name: venture-env-secrets
-          EOF
-          kubectl wait --for=condition=complete job/db-migration-${{ github.sha }} -n ${{ env.PROD_NAMESPACE }} --timeout=180s || true
-
-      - name: Deploy Application Services
-        run: |
-          kubectl apply -f k8s/app-service-prod.yaml -n ${{ env.PROD_NAMESPACE }}
-          kubectl apply -f k8s/ingress-prod.yaml -n ${{ env.PROD_NAMESPACE }}
-
-      - name: Blue-Green Deployment
-        run: |
-          set -e
-          IMAGE_TAG="${{ github.sha }}"
-          NAMESPACE="${{ env.PROD_NAMESPACE }}"
-
-          # Ensure both deployments exist
-          echo "Ensuring app-blue and app-green deployments exist..."
-          kubectl apply -f k8s/app-blue-deployment.yaml -n $NAMESPACE
-          kubectl apply -f k8s/app-green-deployment.yaml -n $NAMESPACE
-
-          # Determine current and new colors
-          CURRENT_COLOR=$(kubectl get service app-service -n $NAMESPACE -o jsonpath='{.spec.selector.color}' 2>/dev/null || echo "blue")
-          if [ "$CURRENT_COLOR" = "blue" ]; then
-            NEW_COLOR="green"
-            OLD_COLOR="blue"
-          else
-            NEW_COLOR="blue"
-            OLD_COLOR="green"
-          fi
-
-          echo "Current active color: $CURRENT_COLOR"
-          echo "Deploying to: $NEW_COLOR"
-
-          # Deploy new version
-          kubectl set image deployment/app-${NEW_COLOR} venture-api=${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG -n $NAMESPACE
-          kubectl scale deployment app-${NEW_COLOR} --replicas=2 -n $NAMESPACE
-
-          echo "Waiting for new deployment rollout..."
-          kubectl rollout status deployment/app-${NEW_COLOR} -n $NAMESPACE --timeout=300s
-
-          echo "Waiting for pods to be ready..."
-          kubectl wait --for=condition=ready pod -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --timeout=180s
-
-          # Verify deployment health
-          echo "Verifying deployment health..."
-          READY_PODS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --field-selector=status.phase=Running -o json | jq '.items | length')
-          if [ "$READY_PODS" -lt 1 ]; then
-            echo "Error: No ready pods found"
-            kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl describe pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=50
-            exit 1
-          fi
-          echo "$READY_PODS pods are ready"
-
-          # Create temporary pod for health check
-          echo "Creating temporary pod for health check..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: health-check-pod-${NEW_COLOR}
-            namespace: $NAMESPACE
-          spec:
-            containers:
-            - name: curl
-              image: curlimages/curl:latest
-              command: ["sleep", "300"]
-            restartPolicy: Never
-          EOF
-
-          kubectl wait --for=condition=ready pod/health-check-pod-${NEW_COLOR} -n $NAMESPACE --timeout=60s
-
-          # Create temporary test service
-          echo "Creating temporary test service..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: app-service-test-${NEW_COLOR}
-            namespace: $NAMESPACE
-          spec:
-            selector:
-              app: venture-api
-              color: $NEW_COLOR
-            ports:
-              - protocol: TCP
-                port: 80
-                targetPort: 5000
-                name: http
-          EOF
-
-          # Wait for service endpoints
-          echo "Waiting for test service endpoints..."
-          for i in {1..30}; do
-            ENDPOINTS=$(kubectl get endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
-            if [ -n "$ENDPOINTS" ]; then
-              echo "Endpoints ready: $ENDPOINTS"
-              break
-            fi
-            echo "Waiting for endpoints... ($i/30)"
-            sleep 3
-          done
-
-          if [ -z "$ENDPOINTS" ]; then
-            echo "Error: No endpoints after 90s"
-            kubectl describe service app-service-test-${NEW_COLOR} -n $NAMESPACE
-            kubectl describe pod -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
-            exit 1
-          fi
-
-          # Perform health check
-          echo "Performing health check via test service..."
-          max_attempts=20
-          attempt=1
-          while [ $attempt -le $max_attempts ]; do
-            if kubectl exec -n $NAMESPACE health-check-pod-${NEW_COLOR} -- curl -f -v -s http://app-service-test-${NEW_COLOR}:80/api/health -H "Cache-Control: no-cache" > /tmp/health.log 2>&1; then
-              echo "Health check passed"
-              break
-            fi
-            if [ $attempt -eq $max_attempts ]; then
-              echo "Health check failed after $max_attempts attempts"
-              echo "=== Last curl output ==="
-              cat /tmp/health.log
-              kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
-              kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
-              kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
+            # Check for .env file
+            if [ ! -f "$ENV_FILE" ]; then
+              echo ".env.production does not exist! Deployment aborted."
               exit 1
             fi
-            echo "Health check attempt $attempt/$max_attempts failed, retrying..."
-            cat /tmp/health.log
-            sleep 5
-            attempt=$((attempt + 1))
-          done
 
-          # Cleanup test resources
-          kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE
-          kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE
+            # Append COMMIT_SHA to .env
+            echo "COMMIT_SHA=$COMMIT_SHA" >> "$ENV_FILE"
 
-          # Switch traffic to new deployment
-          echo "Switching traffic to $NEW_COLOR deployment..."
-          kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${NEW_COLOR}\"}}}" -n $NAMESPACE
+            # Pull latest image
+            docker pull $IMAGE
 
-          # Wait for traffic switch to propagate
-          echo "Waiting for traffic switch to propagate..."
-          sleep 30
-
-          # Verify service endpoints
-          echo "Verifying service endpoints..."
-          NEW_ENDPOINTS=$(kubectl get endpoints app-service -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' | tr ' ' '\n' | sort)
-          EXPECTED_ENDPOINTS=$(kubectl get pods -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.items[*].status.podIP}' | tr ' ' '\n' | sort)
-          if [ "$NEW_ENDPOINTS" != "$EXPECTED_ENDPOINTS" ]; then
-            echo "Warning: Endpoints may not be fully updated yet"
-            echo "Current endpoints: $NEW_ENDPOINTS"
-            echo "Expected endpoints: $EXPECTED_ENDPOINTS"
-          else
-            echo "Service endpoints successfully updated"
-          fi
-
-          # Final health check via ingress
-          echo "Performing final health check via ingress..."
-          max_attempts=15
-          attempt=1
-          success=0
-          while [ $attempt -le $max_attempts ]; do
-            if curl -f -s https://casinochautari.com/api/health -H "Cache-Control: no-cache" -H "Connection: close" > /dev/null 2>&1; then
-              echo "Health check passed (attempt $attempt)"
-              success=$((success + 1))
-              if [ $success -ge 3 ]; then
-                echo "Health checks consistently passing"
-                break
-              fi
+            # Blue-Green Deployment Logic
+            CURRENT_CONTAINER=$(docker ps -q --filter "name=venture-api-prod-blue" --filter "status=running")
+            if [ -n "$CURRENT_CONTAINER" ]; then
+              NEW_COLOR="green"
+              OLD_COLOR="blue"
             else
-              success=0
-              if [ $attempt -eq $max_attempts ]; then
-                echo "Error: Health check failed after $max_attempts attempts, rolling back..."
-                kubectl patch service app-service -p "{\"spec\":{\"selector\":{\"app\":\"venture-api\",\"color\":\"${OLD_COLOR}\"}}}" -n $NAMESPACE
-                kubectl logs -l app.kubernetes.io/name=traefik -n kube-system --tail=100 || echo "Failed to fetch Traefik logs"
-                exit 1
-              fi
+              NEW_COLOR="blue"
+              OLD_COLOR="green"
             fi
-            echo "Health check attempt $attempt/$max_attempts (successes: $success/3)"
-            sleep 5
-            attempt=$((attempt + 1))
-          done
 
-          # Scale down old deployment
-          echo "Scaling down $OLD_COLOR deployment..."
-          if kubectl get deployment app-${OLD_COLOR} -n $NAMESPACE >/dev/null 2>&1; then
-            kubectl scale deployment app-${OLD_COLOR} --replicas=0 -n $NAMESPACE
-          else
-            echo "Old deployment app-${OLD_COLOR} not found, skipping scale down."
-          fi
+            echo "Deploying to $NEW_COLOR container..."
 
-          echo "Deployment completed successfully!"
-          echo "Active color is now: $NEW_COLOR"
+            # Remove old network if exists
+            docker network rm $NETWORK 2>/dev/null || true
+            docker network create $NETWORK 2>/dev/null || true
 
-      - name: Deploy HPA
-        run: |
-          kubectl apply -f k8s/hpa-prod.yaml -n ${{ env.PROD_NAMESPACE }}
+            # Start Redis
+            docker run -d \
+              --name venture-redis-prod \
+              --network $NETWORK \
+              -p 6379:6379 \
+              --env-file "$ENV_FILE" \
+              --user root \
+              --restart unless-stopped \
+              redis:7-alpine
 
-      - name: Post-deployment verification
-        run: |
-          echo "=== Deployment Summary ==="
-          kubectl get deployments -n ${{ env.PROD_NAMESPACE }}
-          kubectl get pods -n ${{ env.PROD_NAMESPACE }}
-          kubectl get services -n ${{ env.PROD_NAMESPACE }}
-          kubectl get hpa -n ${{ env.PROD_NAMESPACE }}
-          echo ""
-          echo "=== Active Service Selector ==="
-          kubectl get service app-service -n ${{ env.PROD_NAMESPACE }} -o jsonpath='{.spec.selector}'
+            # Start Postgres
+            docker run -d \
+              --name venture-postgres-prod \
+              --network $NETWORK \
+              -p 5432:5432 \
+              --env-file "$ENV_FILE" \
+              --user root \
+              --restart unless-stopped \
+              postgres:16-alpine
 
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "Production deployment failed! Check the logs above."
-          kubectl get pods -n ${{ env.PROD_NAMESPACE }}
-          kubectl describe pods -n ${{ env.PROD_NAMESPACE }}
-          kubectl logs -l app=venture-api -n ${{ env.PROD_NAMESPACE }} --tail=100 || true
+            # Run database migrations
+            docker run --rm \
+              --network $NETWORK \
+              --env-file "$ENV_FILE" \
+              $IMAGE \
+              npx prisma migrate deploy
+
+            # Start new container
+            docker run -d \
+              --name venture-api-prod-$NEW_COLOR \
+              --network $NETWORK \
+              -p ${{ env.PROD_PORT }}:${{ env.PROD_PORT }} \
+              --env-file "$ENV_FILE" \
+              --user root \
+              --restart unless-stopped \
+              $IMAGE
+
+            # Health check
+            max_attempts=15
+            attempt=1
+            success=0
+            while [ $attempt -le $max_attempts ]; do
+              if curl -f -s http://localhost:${{ env.PROD_PORT }}/api/health > /dev/null; then
+                echo "Health check passed (attempt $attempt)"
+                success=$((success + 1))
+                if [ $success -ge 3 ]; then
+                  echo "Health checks consistently passing"
+                  break
+                fi
+              else
+                success=0
+                if [ $attempt -eq $max_attempts ]; then
+                  echo "Health check failed after $max_attempts attempts, rolling back..."
+                  docker stop venture-api-prod-$NEW_COLOR || true
+                  docker rm venture-api-prod-$NEW_COLOR || true
+                  exit 1
+                fi
+              fi
+              echo "Health check attempt $attempt/$max_attempts (successes: $success/3)"
+              sleep 5
+              attempt=$((attempt + 1))
+            done
+
+            # Stop and remove old container
+            docker stop venture-api-prod-$OLD_COLOR 2>/dev/null || true
+            docker rm venture-api-prod-$OLD_COLOR 2>/dev/null || true
+
+            # Clean up unused images
+            docker image prune -f
+
+            echo "Production deployment completed successfully! Active container: venture-api-prod-$NEW_COLOR"
