@@ -54,7 +54,7 @@ jobs:
           docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
           docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
           docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
-  # Staging Deployment
+
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -78,46 +78,46 @@ jobs:
             REDIS_PORT=6380
             API_PORT="${{ env.STAGING_PORT }}"
 
-            # === Validate .env.development ===
-            # if [ ! -f "$ENV_FILE" ]; then
-            #   echo "Error: .env file not found at $ENV_FILE"
-            #   exit 1
-            # fi
-            # echo "COMMIT_SHA=$COMMIT_SHA" >> "$ENV_FILE"
+            echo "=== Pulling new image ==="
+            # Stop old API first to free image usage
+            docker stop "$API_CONTAINER" 2>/dev/null || true
+            docker rm "$API_CONTAINER" 2>/dev/null || true
 
-            # === Pull image ===
             echo "Pulling $IMAGE..."
             docker pull "$IMAGE"
 
-            # === KILL ALL REDIS (by name, image, and port) ===
-            echo "Terminating all Redis instances..."
-
-            # 1. Stop by name
+            echo "=== Cleaning old Redis ==="
             docker stop "$REDIS_CONTAINER" 2>/dev/null || true
-            docker rm   "$REDIS_CONTAINER" 2>/dev/null || true
+            docker rm "$REDIS_CONTAINER" 2>/dev/null || true
 
-            # 2. Stop ANY container using port 6380
+            # Stop any container still using Redis port
             docker ps --filter "publish=$REDIS_PORT" -q | xargs -r docker stop
             docker ps --filter "publish=$REDIS_PORT" -q | xargs -r docker rm
 
-            # 3. Stop ALL redis:*-alpine containers
+            # Stop any redis:*-alpine image containers
             docker ps -a --filter "ancestor=redis" --format '{{.ID}}' | xargs -r docker stop
             docker ps -a --filter "ancestor=redis" --format '{{.ID}}' | xargs -r docker rm
 
-            # === Free port 6380 ===
-            echo "Ensuring port $REDIS_PORT is free..."
+            echo "=== Ensuring port $REDIS_PORT is free ==="
             if lsof -i :$REDIS_PORT > /dev/null 2>&1; then
-              echo "Warning: Port $REDIS_PORT still in use. Killing processes..."
+              echo "Killing any processes on port $REDIS_PORT..."
               fuser -k $REDIS_PORT/tcp || true
             fi
             sleep 2
 
-            # === Recreate network ===
-            docker network rm "$NETWORK" 2>/dev/null || true
-            docker network create "$NETWORK"
+            echo "=== Recreating Docker network safely ==="
+            if docker network inspect "$NETWORK" >/dev/null 2>&1; then
+              echo "Network $NETWORK exists. Removing..."
+              if ! docker network rm "$NETWORK" 2>/dev/null; then
+                echo "Network removal failed — force disconnecting containers..."
+                docker network inspect "$NETWORK" -f '{{range .Containers}}{{.Name}} {{end}}' | xargs -r -n1 docker network disconnect -f "$NETWORK" || true
+                docker network rm "$NETWORK" || true
+              fi
+            fi
 
-            # === Start Redis ===
-            echo "Starting Redis on port $REDIS_PORT..."
+            docker network create "$NETWORK" || echo "Network already exists, continuing..."
+
+            echo "=== Starting Redis ==="
             docker run -d \
               --name "$REDIS_CONTAINER" \
               --network "$NETWORK" \
@@ -126,8 +126,7 @@ jobs:
               redis:7-alpine \
               redis-server --appendonly yes --save 60 1
 
-            # Wait for Redis
-            echo "Waiting for Redis..."
+            echo "Waiting for Redis to be ready..."
             timeout=30
             elapsed=0
             until docker exec "$REDIS_CONTAINER" redis-cli ping > /dev/null 2>&1; do
@@ -141,32 +140,25 @@ jobs:
             done
             echo "Redis is ready!"
 
-            # === Run migrations ===
-            echo "Running database migrations..."
+            echo "=== Running database migrations ==="
             docker run --rm \
               --network "$NETWORK" \
-              --env-file /root/venture/.env.development \
+              --env-file "$ENV_FILE" \
               --user root \
               "$IMAGE" \
               npx prisma migrate deploy || echo "Warning: No migrations or failed (continuing)"
 
-            # === Stop old API ===
-            docker stop "$API_CONTAINER" 2>/dev/null || true
-            docker rm   "$API_CONTAINER" 2>/dev/null || true
-
-            # === Start API ===
-            echo "Starting API on port $API_PORT..."
+            echo "=== Starting API container ==="
             docker run -d \
               --name "$API_CONTAINER" \
               --network "$NETWORK" \
               -p "$API_PORT:$API_PORT" \
-              --env-file /root/venture/.env.development \
+              --env-file "$ENV_FILE" \
               --user root \
               --restart unless-stopped \
               "$IMAGE"
 
-            # === Health Check ===
-            echo "Running health checks..."
+            echo "=== Running health checks ==="
             max_attempts=15
             attempt=1
             success=0
@@ -194,10 +186,10 @@ jobs:
               exit 1
             fi
 
-            # === Final cleanup ===
+            echo "=== Cleaning up unused images ==="
             docker image prune -f
 
-            echo "Staging deployment SUCCESSFUL!"
+            echo "------------------ Staging deployment SUCCESSFUL! ------------------"
             echo "API: http://$(hostname):$API_PORT"
             echo "Redis: $(hostname):$REDIS_PORT"
 
