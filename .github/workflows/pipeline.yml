@@ -112,11 +112,30 @@ jobs:
         with:
           version: v1.29.15
 
-      - name: Configure kubeconfig
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.15
+
+      - name: Pull kubeconfig from server
         run: |
-          mkdir -p ~/.kube
-          echo '${{ secrets.KUBECONFIG_STAGING }}' | base64 -d > ~/.kube/config
+          mkdir -p ~/.kube ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
+
+          scp -i ~/.ssh/id_rsa $SSH_USER@$SSH_HOST:~/.kube/config ~/.kube/config
           chmod 600 ~/.kube/config
+
+          # sanity‑check
+          echo "Cluster URL: $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+
+      # - name: Configure kubeconfig
+      #   run: |
+      #     mkdir -p ~/.kube
+      #     echo '${{ secrets.KUBECONFIG_STAGING }}' | base64 -d > ~/.kube/config
+      #     chmod 600 ~/.kube/config
 
       - name: Verify cluster connection
         run: |
