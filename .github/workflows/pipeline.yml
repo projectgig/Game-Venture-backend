@@ -328,22 +328,6 @@ jobs:
           echo "Performing health check via test service..."
           max_attempts=20
           attempt=1
-          while [ $attempt -le $max_attempts ]; do
-            if kubectl exec -n $NAMESPACE health-check-pod-${NEW_COLOR} -- curl -f -s http://app-service-test-${NEW_COLOR}:80/api/health -H "Cache-Control: no-cache" > /dev/null 2>&1; then
-              echo "Health check passed"
-              break
-            fi
-            if [ $attempt -eq $max_attempts ]; then
-              echo "Health check failed after $max_attempts attempts"
-              kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
-              kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
-              kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
-              exit 1
-            fi
-            echo "Health check attempt $attempt/$max_attempts failed, retrying..."
-            sleep 5
-            attempt=$((attempt + 1))
-          done
 
           # Cleanup test resources
           kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE
@@ -600,34 +584,44 @@ jobs:
           EOF
 
           # Wait for service endpoints
-          sleep 10
-          ENDPOINTS=$(kubectl get endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}')
+          echo "Waiting for test service endpoints..."
+          for i in {1..30}; do
+            ENDPOINTS=$(kubectl get endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+            if [ -n "$ENDPOINTS" ]; then
+              echo "Endpoints ready: $ENDPOINTS"
+              break
+            fi
+            echo "Waiting for endpoints... ($i/30)"
+            sleep 3
+          done
+
           if [ -z "$ENDPOINTS" ]; then
-            echo "Error: No endpoints available for test service"
-            kubectl describe endpoints app-service-test-${NEW_COLOR} -n $NAMESPACE
-            kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
-            kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
+            echo "Error: No endpoints after 90s"
+            kubectl describe service app-service-test-${NEW_COLOR} -n $NAMESPACE
+            kubectl describe pod -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE
             exit 1
           fi
-          echo "Test service endpoints: $ENDPOINTS"
 
           # Perform health check
           echo "Performing health check via test service..."
           max_attempts=20
           attempt=1
           while [ $attempt -le $max_attempts ]; do
-            if kubectl exec -n $NAMESPACE health-check-pod-${NEW_COLOR} -- curl -f -s http://app-service-test-${NEW_COLOR}:80/api/health -H "Cache-Control: no-cache" > /dev/null 2>&1; then
+            if kubectl exec -n $NAMESPACE health-check-pod-${NEW_COLOR} -- curl -f -v -s http://app-service-test-${NEW_COLOR}:80/api/health -H "Cache-Control: no-cache" > /tmp/health.log 2>&1; then
               echo "Health check passed"
               break
             fi
             if [ $attempt -eq $max_attempts ]; then
               echo "Health check failed after $max_attempts attempts"
+              echo "=== Last curl output ==="
+              cat /tmp/health.log
+              kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
               kubectl delete service app-service-test-${NEW_COLOR} -n $NAMESPACE || true
               kubectl delete pod health-check-pod-${NEW_COLOR} -n $NAMESPACE || true
-              kubectl logs -l app=venture-api,color=${NEW_COLOR} -n $NAMESPACE --tail=100
               exit 1
             fi
             echo "Health check attempt $attempt/$max_attempts failed, retrying..."
+            cat /tmp/health.log
             sleep 5
             attempt=$((attempt + 1))
           done
