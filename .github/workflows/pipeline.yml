@@ -47,6 +47,13 @@ jobs:
           docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
           docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
           docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
+          docker build -f ${{ github.ref == 'refs/heads/dev' && './Dockerfile.dev' || './Dockerfile.prod' }} -t ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
+          docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
+          docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
 
   deploy-staging:
     name: Deploy to Staging
