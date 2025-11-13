@@ -47,6 +47,13 @@ jobs:
           docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
           docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
           docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
+          docker build -f ${{ github.ref == 'refs/heads/dev' && './Dockerfile.dev' || './Dockerfile.prod' }} -t ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
+          docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
+          docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
 
   deploy-staging:
     name: Deploy to Staging
@@ -64,7 +71,7 @@ jobs:
             set -e
             export IMAGE=${{ env.VENTURE_IMAGE_NAME }}:dev-latest
             export NETWORK=venture-staging-network
-            export ENV_FILE=/root/venture/.env.development
+            export ENV_FILE=${{ secrets.VENTURE_ENV_STAGING }}
             export COMMIT_SHA=${{ github.sha }}
 
             # Check for .env file
@@ -78,18 +85,6 @@ jobs:
 
             # Pull latest image
             docker pull $IMAGE
-
-            # # Blue-Green Deployment Logic
-            # CURRENT_CONTAINER=$(docker ps -q --filter "name=venture-api-staging-blue" --filter "status=running")
-            # if [ -n "$CURRENT_CONTAINER" ]; then
-            #   NEW_COLOR="green"
-            #   OLD_COLOR="blue"
-            # else
-            #   NEW_COLOR="blue"
-            #   OLD_COLOR="green"
-            # fi
-
-            # echo "Deploying to $NEW_COLOR container..."
 
             # Remove old network if exists
             docker network rm $NETWORK 2>/dev/null || true
@@ -105,26 +100,9 @@ jobs:
               --restart unless-stopped \
               redis:7-alpine
 
-            # Start Postgres
-            docker run -d \
-              --name venture-postgres-staging \
-              --network $NETWORK \
-              -p 5432:5432 \
-              --env-file "$ENV_FILE" \
-              --user root \
-              --restart unless-stopped \
-              postgres:16-alpine
-
-            # Run database migrations
-            docker run --rm \
-              --network $NETWORK \
-              --env-file "$ENV_FILE" \
-              $IMAGE \
-              npx prisma migrate deploy
-
             # Start new container
             docker run -d \
-              --name venture-api-staging-$NEW_COLOR \
+              --name venture-api-staging \
               --network $NETWORK \
               -p ${{ env.STAGING_PORT }}:${{ env.STAGING_PORT }} \
               --env-file "$ENV_FILE" \

@@ -1,6 +1,8 @@
+version: "3.8"
 services:
   app-dev:
-    container_name: venture-api-local
+    image: ${secrets.VENTURE_DOCKERHUB_USERNAME}/venture-api:dev
+    container_name: venture-api-dev
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -11,7 +13,7 @@ services:
       - .env.development
     environment:
       NODE_ENV: development
-      REDIS_HOST: venture-redis
+      REDIS_HOST: venture-redis-staging
       REDIS_PORT: 6379
     volumes:
       - .:/app
@@ -22,8 +24,9 @@ services:
     command: yarn dev
 
   redis:
-    container_name: venture-redis
+    container_name: venture-redis-staging
     image: redis:alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
