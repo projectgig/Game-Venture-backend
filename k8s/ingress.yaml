@@ -22,7 +22,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: staging.casinochautari.com
+    - host: api-staging.casinochautari.com
       http:
         paths:
           - backend:
@@ -34,5 +34,5 @@ spec:
             pathType: Prefix
   tls:
     - hosts:
-        - staging.casinochautari.com
+        - api-staging.casinochautari.com
       secretName: staging-tls
