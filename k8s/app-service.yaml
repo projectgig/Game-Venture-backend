@@ -15,6 +15,7 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 5000
+      nodePort: 30080
       name: http
   # Disable session affinity to prevent stale connections
   sessionAffinity: None
