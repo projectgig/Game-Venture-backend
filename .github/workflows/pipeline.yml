@@ -117,6 +117,7 @@ jobs:
         with:
           version: v1.29.15
 
+      #  Pull kubeconfig from server
       - name: Pull kubeconfig from server
         env:
           SSH_HOST: ${{ secrets.VENTURE_HOST }}
@@ -144,17 +145,6 @@ jobs:
           echo "Validating kubeconfig..."
           kubectl config view --minify | head -n 5
 
-        run: |
-          mkdir -p ~/.kube ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-          ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
-
-          scp -i ~/.ssh/id_rsa $SSH_USER@$SSH_HOST:~/.kube/config ~/.kube/config
-          chmod 600 ~/.kube/config
-
-          # sanity‑check
           echo "Cluster URL: $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
 
       # - name: Configure kubeconfig
