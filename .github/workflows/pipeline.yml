@@ -132,20 +132,12 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
 
-          echo "Copying kubeconfig from /root/.kube/config..."
-          scp -i ~/.ssh/id_rsa $SSH_USER@$SSH_HOST:/root/.kube/config ~/.kube/config
+          echo "Copying kubeconfig from ~/$SSH_USER/.kube/config..."
+          scp -i ~/.ssh/id_rsa $SSH_USER@$SSH_HOST:~/.kube/config ~/.kube/config
 
-          if [ ! -s ~/.kube/config ]; then
-            echo "ERROR: kubeconfig is empty or missing!"
-            exit 1
-          fi
-
-          chmod 600 ~/.kube/config
-
-          echo "Validating kubeconfig..."
-          kubectl config view --minify | head -n 5
-
-          echo "Cluster URL: $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+          echo "Validating connection..."
+          kubectl cluster-info
+          kubectl get nodes
 
       # - name: Configure kubeconfig
       #   run: |
