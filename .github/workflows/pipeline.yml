@@ -76,7 +76,7 @@ jobs:
             COMMIT_SHA="${{ github.sha }}"
             API_CONTAINER="venture-api-staging"
             REDIS_CONTAINER="venture-redis-staging"
-            REDIS_PORT=6379
+            REDIS_PORT=6380
             API_PORT="${{ env.STAGING_PORT }}"
 
             # === Validate .env ===
@@ -97,7 +97,7 @@ jobs:
             docker stop "$REDIS_CONTAINER" 2>/dev/null || true
             docker rm   "$REDIS_CONTAINER" 2>/dev/null || true
 
-            # 2. Stop ANY container using port 6379
+            # 2. Stop ANY container using port 6380
             docker ps --filter "publish=$REDIS_PORT" -q | xargs -r docker stop
             docker ps --filter "publish=$REDIS_PORT" -q | xargs -r docker rm
 
@@ -105,7 +105,7 @@ jobs:
             docker ps -a --filter "ancestor=redis" --format '{{.ID}}' | xargs -r docker stop
             docker ps -a --filter "ancestor=redis" --format '{{.ID}}' | xargs -r docker rm
 
-            # === Free port 6379 ===
+            # === Free port 6380 ===
             echo "Ensuring port $REDIS_PORT is free..."
             if lsof -i :$REDIS_PORT > /dev/null 2>&1; then
               echo "Warning: Port $REDIS_PORT still in use. Killing processes..."
@@ -251,7 +251,7 @@ jobs:
             docker run -d \
               --name venture-redis-prod \
               --network $NETWORK \
-              -p 6379:6379 \
+              -p 6380:6379 \
               --env-file "$ENV_FILE" \
               --user root \
               --restart unless-stopped \

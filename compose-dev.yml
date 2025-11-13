@@ -14,7 +14,7 @@ services:
     environment:
       NODE_ENV: development
       REDIS_HOST: venture-redis-staging
-      REDIS_PORT: 6379
+      REDIS_PORT: 6380
     volumes:
       - .:/app
       - /app/node_modules
@@ -28,7 +28,7 @@ services:
     image: redis:alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data_dev:/data
