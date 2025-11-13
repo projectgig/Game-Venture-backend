@@ -54,7 +54,7 @@ jobs:
           docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
           docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
           docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
-
+  # Staging Deployment
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
