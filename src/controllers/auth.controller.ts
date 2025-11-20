@@ -6,7 +6,7 @@ import {
   verifyToken,
 } from "../utils/jwt";
 import { db, prisma } from "../database/prismaClient";
-import { Company, CompanyActivity } from "@prisma/client";
+import { Company, CompanyActivity, Prisma, Role } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 import loggerInstance from "@game/common/logger/logger.service";
 import {
@@ -395,9 +395,6 @@ export async function requestRecovery(req: Request, res: Response) {
 }
 
 export async function approveRecovery(req: Request, res: Response) {
-  if (req.user?.role !== "ADMIN")
-    return res.status(403).json({ error: "Admin only" });
-
   const { recoveryId } = req.params;
   const recovery = await prisma.twoFactorRecovery.findUnique({
     where: { id: recoveryId },

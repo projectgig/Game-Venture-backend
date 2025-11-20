@@ -7,7 +7,6 @@ import { AuthRequest } from "./auth.middleware";
  * Require one of the allowed roles
  */
 
-
 export const requireRole = (...allowedRoles: Role[]) => {
   return async (req: any, res: Response, next: NextFunction) => {
     try {

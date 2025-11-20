@@ -12,6 +12,7 @@ import {
   verify2FA,
 } from "../controllers/auth.controller";
 import { authenticateToken } from "@game/common/middleware/auth.middleware";
+import { requireRole } from "@game/common/middleware/rbac.middleware";
 
 /**
  * @swagger
@@ -89,6 +90,10 @@ router.get("/2fa/backup-codes", getBackupCodes);
 router.post("/2fa/recovery/request", requestRecovery);
 
 // Admin route
-router.post("/2fa/recovery/approve/:recoveryId", approveRecovery);
+router.post(
+  "/2fa/recovery/approve/:recoveryId",
+  requireRole("ADMIN"),
+  approveRecovery
+);
 
 export const authRoutes = router;
