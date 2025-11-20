@@ -1,29 +1,11 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { db, prisma } from "../../database/prismaClient";
-import { Company, Role } from "@prisma/client";
+import { Company, Prisma, Role } from "@prisma/client";
 import { roleHierarchy } from "@game/common/middleware/rbac.middleware";
 import { StatusCodes } from "http-status-codes";
 import loggerInstance from "@game/common/logger/logger.service";
 import { handleETag } from "@game/utils/etagUtil";
-
-async function isInMyHierarchy(
-  myId: string,
-  targetId: string
-): Promise<boolean> {
-  if (myId === targetId) return true;
-
-  const children = (await db.findMany<Company>(
-    "company",
-    { where: { parentId: myId } },
-    { ttl: 60 }
-  )) as Company[];
-
-  for (const c of children) {
-    if (await isInMyHierarchy(c.id, targetId)) return true;
-  }
-  return false;
-}
 
 export const createUser = async (req: Request, res: Response) => {
   try {
@@ -56,6 +38,11 @@ export const createUser = async (req: Request, res: Response) => {
     const newUserLevel = roleHierarchy[role as Role];
 
     if (newUserLevel >= creatorLevel) {
+      return res.status(StatusCodes.FORBIDDEN).json({
+        message: "You cannot create a user with equal or higher role",
+      });
+    }
+    if (!canAssign(creator.role, role as Role)) {
       return res.status(StatusCodes.FORBIDDEN).json({
         message: "You cannot create a user with equal or higher role",
       });
@@ -122,69 +109,80 @@ export const getDownline = async (req: Request, res: Response) => {
 
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
+    const search = (req.query.q as string) || "";
+    const sortBy = (req.query.sort as string) || "createdAt";
+    const sortOrder =
+      (req.query.order as string)?.toUpperCase() === "ASC" ? "ASC" : "DESC";
     const offset = (page - 1) * limit;
 
-    // First, get the total count
+    const searchQuery = `%${search}%`;
+
+    // Whitelist of sortable columns to prevent SQL injection
+    const sortableColumns = [
+      "username",
+      "email",
+      "role",
+      "points",
+      "isActive",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "lastLoggedIn",
+      "contactNumber",
+    ];
+
+    const validSortBy = sortableColumns.includes(sortBy) ? sortBy : "createdAt";
+
+    // Build ORDER BY clause safely
+    const orderByClause =
+      sortOrder === "ASC"
+        ? Prisma.sql`ORDER BY d.${Prisma.raw(`"${validSortBy}"`)} ASC NULLS LAST`
+        : Prisma.sql`ORDER BY d.${Prisma.raw(`"${validSortBy}"`)} DESC NULLS LAST`;
+
+    // COUNT QUERY (with search applied)
     const countResult = await prisma.$queryRaw<{ total: bigint }[]>`
       WITH RECURSIVE descendants AS (
-        SELECT id
+        SELECT id, username, email, "contactNumber"
         FROM companies
         WHERE id = ${user.id}
-        
+
         UNION ALL
-        
-        SELECT c.id
+
+        SELECT c.id, c.username, c.email, c."contactNumber"
         FROM companies c
         INNER JOIN descendants d ON c."parentId" = d.id
       )
       SELECT COUNT(*) AS total
       FROM descendants
       WHERE id != ${user.id}
+        AND (
+          username ILIKE ${searchQuery} OR
+          email ILIKE ${searchQuery} OR
+          "contactNumber" ILIKE ${searchQuery}
+        );
     `;
 
     const total = Number(countResult[0].total);
 
-    // Get paginated results with parent data
-    const downline = (await prisma.$queryRaw<any[]>`
+    // DATA QUERY (with search + pagination + sorting)
+    const downline = await prisma.$queryRaw<any[]>`
       WITH RECURSIVE descendants AS (
         SELECT 
-          id, 
-          username, 
-          role, 
-          points, 
-          "isActive", 
-          "contactNumber", 
-          "parentId", 
-          "createdAt",
-          email,
-          remarks,
-          status,
-          "rechargePerm",
-          "withdrawPerm",
-          "agentProtect",
-          "lastLoggedIn",
+          id, username, role, points, "isActive",
+          "contactNumber", "parentId", "createdAt",
+          email, remarks, status, "rechargePerm",
+          "withdrawPerm", "agentProtect", "lastLoggedIn",
           "updatedAt"
         FROM companies
         WHERE id = ${user.id}
-        
+
         UNION ALL
-        
+
         SELECT 
-          c.id, 
-          c.username, 
-          c.role, 
-          c.points, 
-          c."isActive", 
-          c."contactNumber", 
-          c."parentId", 
-          c."createdAt",
-          c.email,
-          c.remarks,
-          c.status,
-          c."rechargePerm",
-          c."withdrawPerm",
-          c."agentProtect",
-          c."lastLoggedIn",
+          c.id, c.username, c.role, c.points, c."isActive",
+          c."contactNumber", c."parentId", c."createdAt",
+          c.email, c.remarks, c.status, c."rechargePerm",
+          c."withdrawPerm", c."agentProtect", c."lastLoggedIn",
           c."updatedAt"
         FROM companies c
         INNER JOIN descendants d ON c."parentId" = d.id
@@ -197,18 +195,24 @@ export const getDownline = async (req: Request, res: Response) => {
           'role', p.role,
           'contactNumber', p."contactNumber",
           'email', p.email
-        ) as parent
+        ) AS parent
       FROM descendants d
       LEFT JOIN companies p ON d."parentId" = p.id
       WHERE d.id != ${user.id}
-      ORDER BY d."createdAt" DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `) as Company[];
+        AND (
+          d.username ILIKE ${searchQuery} OR
+          d.email ILIKE ${searchQuery} OR
+          d."contactNumber" ILIKE ${searchQuery}
+        )
+      ${orderByClause}
+      LIMIT ${limit} OFFSET ${offset};
+    `;
 
     const latestUpdate = downline.reduce(
       (max, item) => Math.max(max, new Date(item.updatedAt).getTime()),
       0
     );
+
     if (handleETag(req, res, { updatedAt: new Date(latestUpdate) })) return;
 
     return res.json({
@@ -217,10 +221,81 @@ export const getDownline = async (req: Request, res: Response) => {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+        sortBy: validSortBy,
+        sortOrder,
       },
       data: downline,
       message: "Downline fetched successfully",
     });
+  } catch (err) {
+    loggerInstance.error(`Get downline error:, ${err}`);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json({ message: "Internal server error" });
+  }
+};
+
+export const getMyUsers = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user)
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json({ message: "Unauthorized" });
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    const countResult = (await db.count<Company>("company", {
+      where: { parentId: user.id },
+    })) as number;
+    const users = await db.findMany<Company>("company", {
+      where: { parentId: user.id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        status: true,
+        role: true,
+        points: true,
+        isActive: true,
+        contactNumber: true,
+        parent: {
+          select: {
+            username: true,
+            role: true,
+            contactNumber: true,
+            email: true,
+          },
+        },
+        createdAt: true,
+        lastLoggedIn: true,
+        remarks: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+    });
+
+    const latestUpdate = users.reduce(
+      (max, item) => Math.max(max, new Date(item.updatedAt).getTime()),
+      0
+    );
+    if (handleETag(req, res, { updatedAt: new Date(latestUpdate) })) return;
+
+    res.json({
+      meta: {
+        page,
+        limit,
+        total: countResult,
+        totalPages: Math.ceil(countResult / limit),
+      },
+      data: users,
+      message: "Users fetched successfully",
+    });
+
+    return res.json({ data: users, message: "Users fetched successfully" });
   } catch (err) {
     loggerInstance.error(`Get downline error:, ${err}`);
     return res
@@ -307,31 +382,37 @@ export const getMe = async (req: Request, res: Response) => {
         .status(StatusCodes.UNAUTHORIZED)
         .json({ message: "Unauthorized" });
 
-    const user = await db.findUnique<Company>("company", {
-      where: { id: currentUser.id },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        status: true,
-        role: true,
-        points: true,
-        isActive: true,
-        contactNumber: true,
-        parent: {
-          select: {
-            username: true,
-            role: true,
-            contactNumber: true,
-            email: true,
+    const user = await db.findUnique<Company>(
+      "company",
+      {
+        where: { id: currentUser.id },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          status: true,
+          role: true,
+          points: true,
+          isActive: true,
+          contactNumber: true,
+          parent: {
+            select: {
+              username: true,
+              role: true,
+              contactNumber: true,
+              email: true,
+            },
           },
+          twoFactorEnabled: true,
+          createdAt: true,
+          lastLoggedIn: true,
+          remarks: true,
         },
-        twoFactorEnabled: true,
-        createdAt: true,
-        lastLoggedIn: true,
-        remarks: true,
       },
-    });
+      {
+        useCache: false,
+      }
+    );
 
     if (!user) {
       return res
@@ -373,6 +454,12 @@ export const updateUser = async (req: Request, res: Response) => {
       { ttl: 60 }
     );
     if (!target) return res.status(404).json({ message: "User not found" });
+
+    if (!canAssign(currentUser.role, target.role)) {
+      return res.status(403).json({
+        message: "You don't have permission to update this user",
+      });
+    }
 
     const allowed =
       (await isInMyHierarchy(currentUser.id, id)) ||
@@ -651,4 +738,41 @@ export const getUsersByParentId = async (req: Request, res: Response) => {
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json({ message: "Internal server error" });
   }
+};
+
+// util
+
+const assignMap: Record<Role, Role[]> = {
+  [Role.ADMIN]: [
+    Role.DISTRIBUTOR,
+    Role.SUB_DISTRIBUTOR,
+    Role.STORE,
+    Role.PLAYER,
+  ],
+  [Role.DISTRIBUTOR]: [Role.SUB_DISTRIBUTOR],
+  [Role.SUB_DISTRIBUTOR]: [Role.STORE],
+  [Role.STORE]: [Role.PLAYER],
+  [Role.PLAYER]: [],
+};
+
+export async function isInMyHierarchy(
+  myId: string,
+  targetId: string
+): Promise<boolean> {
+  if (myId === targetId) return true;
+
+  const children = (await db.findMany<Company>(
+    "company",
+    { where: { parentId: myId } },
+    { ttl: 60 }
+  )) as Company[];
+
+  for (const c of children) {
+    if (await isInMyHierarchy(c.id, targetId)) return true;
+  }
+  return false;
+}
+
+export const canAssign = (senderRole: Role, receiverRole: Role): boolean => {
+  return assignMap[senderRole].includes(receiverRole);
 };
