@@ -9,7 +9,6 @@ import { db, prisma } from "../database/prismaClient";
 import { Company, CompanyActivity } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 import loggerInstance from "@game/common/logger/logger.service";
-// import rateLimit, { MemoryStore } from "express-rate-limit";
 import {
   disable2FASchema,
   enable2FASchema,
