@@ -131,12 +131,99 @@ router.post(
   assignCoin
 );
 
+/**
+ * @swagger
+ * /api/coin/transactions-hierarchy:
+ *   get:
+ *     summary: Get transactions hierarchy
+ *     tags: [Coins]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Transactions hierarchy fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Transactions hierarchy fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             example: "clz8p4xy1000a3k6g6jv5n2p9"
+ *                           amount:
+ *                             type: number
+ *                             example: 100
+ *                           type:
+ *                             type: string
+ *                             example: "LOAD"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2023-01-01T00:00:00Z"
+ *       400:
+ *         description: Invalid input or unauthorized
+ */
 router.get(
   "/transactions-hierarchy",
   authenticateToken,
   requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
   transactionsHistoryHierarchy
 );
+
+/**
+ * @swagger
+ * /api/coin/my-transactions:
+ *   get:
+ *     summary: Get transactions hierarchy
+ *     tags: [Coins]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Transactions hierarchy fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Transactions hierarchy fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             example: "clz8p4xy1000a3k6g6jv5n2p9"
+ *                           amount:
+ *                             type: number
+ *                             example: 100
+ *                           type:
+ *                             type: string
+ *                             example: "LOAD"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2023-01-01T00:00:00Z"
+ *       400:
+ *         description: Invalid input or unauthorized
+ */
 router.get(
   "/my-transactions",
   authenticateToken,

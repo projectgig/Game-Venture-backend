@@ -4,7 +4,7 @@ import newrelic from "newrelic";
 
 const router = Router();
 
-router.get("/health", async (req, res) => {
+router.get("/health", async (_, res) => {
   try {
     const health = await healthCheck();
 

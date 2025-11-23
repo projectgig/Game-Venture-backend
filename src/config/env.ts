@@ -11,7 +11,7 @@ export const env = {
   // JWT configuration
   JWT_SECRET:
     process.env.JWT_SECRET ||
-    "rd4jpz8r2czZ7+pRltcC8l2B+lEKjLZnANpN9fbnDlge3U/Wm0lUSef32bIqMdUEenLnsZA1ynv+Nh29MzFPEA==",
+    "rd4jpz8r2czZ7+pRltcC8l2B+lEKjLZnANpN9fbnDlg_)sfdadsfe3U/Wm0lUSef32bIqMdUEenLnsZA1ynv+Nh29MzFPEA==",
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "1h",
 
   // Redis configuration
@@ -23,13 +23,11 @@ export const env = {
 
   ACCESS_TOKEN_SECRET:
     process.env.ACCESS_TOKEN_SECRET ||
-    "rd4jpz8r2czZ7+pRltcC8l2B+lEKjLZnANpN9fbnDlge3U/Wm0lUSef32bIqMdUEenLnsZA1ynv+Nh29MzFPEA==",
+    "rd4jpz8r2czZ7+pRltcC8l2B+lEKjLZnANp_fsauhJHGYJGY@34N9fbnDlge3U/Wm0lUSef32bIqMdUEenLnsZA1ynv+Nh29MzFPEA==",
   ACCESS_TOKEN_EXPIRES_IN: process.env.ACCESS_TOKEN_EXPIRES_IN || "15m",
 
   REFRESH_TOKEN_SECRET:
     process.env.REFRESH_TOKEN_SECRET ||
-    "rd4jpz8r2czZ7+pRltcC8l2B+lEKjLZnANpN9fbnDlge3U/Wm0lUSef32bIqMdUEenLnsZA1ynv+Nh29MzFPEA==",
+    "rd4jpz8r2czZ7+pRltcC8l2B+lEKjLZnANp_*knjasdjkhKHJN9fbnDlge3U/Wm0lUSef32bIqMdUEenLnsZA1ynv+Nh29MzFPEA==",
   REFRESH_TOKEN_EXPIRES_IN: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d",
 };
-
-// c07fbc21d9d12272c8fd3aa2368682feFFFFNRAL
