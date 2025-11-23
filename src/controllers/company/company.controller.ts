@@ -697,7 +697,7 @@ export const deletedUser = async (req: Request, res: Response) => {
 
     await db.update("company", {
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), status: "DELETED" },
     });
     return res.json({ message: "User deleted successfully" });
   } catch (err) {

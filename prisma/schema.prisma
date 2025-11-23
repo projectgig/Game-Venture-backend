@@ -228,6 +228,8 @@ enum LedgerType {
 enum Status {
   ACTIVE
   BLOCK
+  INACTIVE
+  DELETED
 }
 
 enum Role {
