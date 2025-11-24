@@ -37,6 +37,7 @@ A **Express.js** REST API built with **TypeScript**, **Node.js**, and **Prisma O
 - **Prisma** - ORM for database
 - **PostgreSQL/MySQL/SQLite** - Database (choose one)
 - **Yarn / NPM / PNPM** - Package management
+- **REDIS** - Caching
 
 ---
 
@@ -45,8 +46,8 @@ A **Express.js** REST API built with **TypeScript**, **Node.js**, and **Prisma O
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
+git clone https://github.com/projectgig/Game-Venture-backend
+cd Game-Venture-backend
 ```
 
 ### 2. Install dependencies
@@ -77,7 +78,7 @@ Create a `.env.local` file for local environment variables.
 
 ```env
 PORT=3000
-DATABASE_URL="your-database-connection-string"
+DATABASE_URL="DATABASE_URL"
 NODE_ENV=development
 ```
 
@@ -111,6 +112,6 @@ Using PNPM:
 pnpm dev
 ```
 
-## The server will start on `http://localhost:3000` by default.
+## The server will start on `http://localhost:5000` by default.
 
 ## Environment Variables
