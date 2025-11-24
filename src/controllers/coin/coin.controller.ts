@@ -1,12 +1,5 @@
 import { Request, Response } from "express";
-import {
-  Company,
-  Ledger,
-  PaymentMerchant,
-  Prisma,
-  Role,
-  Wallet,
-} from "@prisma/client";
+import { Company, PaymentMerchant, Prisma, Role, Wallet } from "@prisma/client";
 import { db, prisma } from "@game/database/prismaClient";
 import { canAssign, isInMyHierarchy } from "../company/company.controller";
 import { StatusCodes } from "http-status-codes";

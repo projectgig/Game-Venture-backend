@@ -28,7 +28,6 @@ const config = {
   },
 };
 
-// === REDIS CLIENT ===
 let redis: Redis | null = null;
 try {
   redis = new Redis(config.redis);
@@ -37,7 +36,6 @@ try {
   console.warn("Redis not available, falling back to memory cache");
 }
 
-// === IN-MEMORY LRU CACHE ===
 class LRUCache {
   private cache = new Map<
     string,
@@ -98,7 +96,6 @@ class LRUCache {
 
 const memoryCache = new LRUCache();
 
-// === METRICS COLLECTOR ===
 class MetricsCollector {
   private metrics = {
     cacheHits: 0,
@@ -126,7 +123,6 @@ class MetricsCollector {
 
 const metrics = new MetricsCollector();
 
-// === PRISMA CLIENT ===
 const prisma = new PrismaClient({
   log: [
     { emit: "event", level: "query" },
@@ -158,7 +154,6 @@ prisma.$on("error", (e: any) => {
   console.error("Prisma error:", e);
 });
 
-// === CACHE LAYER (Redis + Memory Fallback) ===
 class CacheLayer {
   async get(
     key: string,
@@ -249,7 +244,6 @@ class CacheLayer {
 
 const cache = new CacheLayer();
 
-// === CIRCUIT BREAKER ===
 class CircuitBreaker {
   private failures = 0;
   private lastFailureTime = 0;
@@ -304,7 +298,6 @@ class CircuitBreaker {
 
 const circuitBreaker = new CircuitBreaker();
 
-// === RETRY LOGIC ===
 async function retryQuery<T>(
   fn: () => Promise<T>,
   options?: {
@@ -358,7 +351,6 @@ async function retryQuery<T>(
   return pRetry(() => circuitBreaker.execute(executeQuery), opts);
 }
 
-// === CACHE KEY GENERATOR ===
 function generateCacheKey(
   namespace: string,
   operation: string,
@@ -380,7 +372,6 @@ function generateCacheKey(
   return `${namespace}:${operation}:${Buffer.from(argsHash).toString("base64")}`;
 }
 
-// === CACHED QUERY WRAPPER ===
 async function cachedQuery<T>(
   namespace: string,
   operation: string,
@@ -418,14 +409,12 @@ async function cachedQuery<T>(
   return result;
 }
 
-// === CACHE INVALIDATION ===
 async function invalidateCache(patterns: string[]): Promise<void> {
   for (const pattern of patterns) {
     await cache.invalidate(pattern);
   }
 }
 
-// === HEALTH CHECKS ===
 async function healthCheck(): Promise<{
   database: boolean;
   redis: boolean;
@@ -464,7 +453,6 @@ async function checkRedisHealth(): Promise<boolean> {
   }
 }
 
-// === GRACEFUL SHUTDOWN ===
 let isShuttingDown = false;
 
 async function shutdown(): Promise<void> {
@@ -477,10 +465,8 @@ async function shutdown(): Promise<void> {
   console.log("Shutting down gracefully...");
 
   try {
-    // 1. Clear cache
     await cache.clear();
 
-    // 2. Gracefully quit Redis
     if (redis && ["connect", "connecting", "ready"].includes(redis.status)) {
       try {
         await redis.quit();
@@ -491,14 +477,12 @@ async function shutdown(): Promise<void> {
       }
     }
 
-    // 3. Disconnect Prisma
     await prisma.$disconnect();
 
     console.log("Shutdown complete");
   } catch (error) {
     console.error("Error during shutdown:", error);
   } finally {
-    // Force exit after timeout
     setTimeout(() => {
       console.warn("Forcing process exit after shutdown timeout");
       process.exit(0);
@@ -506,11 +490,9 @@ async function shutdown(): Promise<void> {
   }
 }
 
-// === SIGNAL HANDLERS ===
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-// === DATABASE OPERATIONS ===
 const db = {
   findMany: <T>(
     model: string,
@@ -644,13 +626,11 @@ const db = {
     return result;
   },
 
-  // For seed scripts
   $disconnect: async () => {
     await shutdown();
   },
 };
 
-// === EXPORTS ===
 export {
   prisma,
   db,

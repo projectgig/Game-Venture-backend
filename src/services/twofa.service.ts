@@ -30,7 +30,7 @@ export class TwoFactorService {
       data: {
         twoFactorEnabled: false,
         twoFactorSecret: encryptedSecret,
-        // twoFactorMethod: "APP", // Optional: track method
+        // twoFactorMethod: "APP",
       },
     });
 
@@ -54,7 +54,7 @@ export class TwoFactorService {
       secret,
       encoding: "base32",
       token,
-      window: 1, // ±30 seconds
+      window: 1, // 30 seconds
     });
 
     if (!verified) throw new Error("Invalid token");
@@ -101,7 +101,7 @@ export class TwoFactorService {
       secret,
       encoding: "base32",
       token,
-      window: 2, // ±60 seconds
+      window: 2, // 1 minute
     });
 
     if (!verified) throw new Error("Invalid 2FA token");
@@ -160,7 +160,7 @@ export class TwoFactorService {
   }
 
   /**
-   * List unused backup codes (only IDs + dates for security)
+   * List unused backup codes
    */
   static async listBackupCodes(companyId: string) {
     return await prisma.backupCode.findMany({

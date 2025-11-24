@@ -1,12 +1,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-  verifyToken,
-} from "../utils/jwt";
-import { db, prisma } from "../database/prismaClient";
-import { Company, CompanyActivity, Prisma, Role } from "@prisma/client";
+
+import { Company, CompanyActivity } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 import loggerInstance from "@game/common/logger/logger.service";
 import {
@@ -19,6 +14,12 @@ import { TwoFactorService } from "@game/services/twofa.service";
 import jwt from "jsonwebtoken";
 import speakeasy from "speakeasy";
 import { encrypt } from "@game/lib/crypto";
+import { db, prisma } from "@game/database/prismaClient";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyToken,
+} from "@game/utils/jwt";
 
 // const loginLimiter = rateLimit({
 //   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
