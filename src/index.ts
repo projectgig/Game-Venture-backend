@@ -32,8 +32,13 @@ class App {
 
     // CORS
     this.app.use(cookieParser());
-
-    this.app.use(cors({ origin: env.CORS_ORIGIN || "*", credentials: true }));
+    const allowedOrigins = env.CORS_ORIGIN ? env.CORS_ORIGIN.split(",") : "*";
+    this.app.use(
+      cors({
+        origin: allowedOrigins,
+        credentials: true,
+      })
+    );
     this.app.use(bodyParser.json());
     this.app.use(bodyParser.urlencoded({ extended: true }));
 

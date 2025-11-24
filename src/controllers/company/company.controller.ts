@@ -671,6 +671,7 @@ export const updateUserCoin = async (req: Request, res: Response) => {
 export const deletedUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    console.log(id);
 
     const currentUser = req.user;
     if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
@@ -682,12 +683,12 @@ export const deletedUser = async (req: Request, res: Response) => {
     );
     if (!target) return res.status(404).json({ message: "User not found" });
 
-    if (target.role === "ADMIN")
+    if (target.role === Role.ADMIN)
       return res.status(403).json({ message: "Cannot delete admin" });
 
     let allowed = false;
 
-    if (currentUser.role === "ADMIN") {
+    if (currentUser.role === Role.ADMIN) {
       allowed = true;
     } else {
       allowed = await isInMyHierarchy(currentUser.id, id);
@@ -697,7 +698,7 @@ export const deletedUser = async (req: Request, res: Response) => {
 
     await db.update("company", {
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), status: "DELETED" },
     });
     return res.json({ message: "User deleted successfully" });
   } catch (err) {

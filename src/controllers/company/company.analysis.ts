@@ -5,7 +5,6 @@ import {
   LedgerType,
   GameResult,
   Status,
-  GameSession,
 } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 

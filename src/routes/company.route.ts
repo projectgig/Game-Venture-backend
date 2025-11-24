@@ -9,6 +9,7 @@ import {
   getMe,
   getUsersByParentId,
   updateUserProfile,
+  deletedUser,
 } from "../controllers/company/company.controller";
 
 import {
@@ -117,6 +118,13 @@ router.post(
   authenticateToken,
   requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
   createUser
+);
+
+router.delete(
+  "/delete/:id",
+  authenticateToken,
+  requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
+  deletedUser
 );
 
 /**

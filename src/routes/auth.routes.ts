@@ -10,7 +10,7 @@ import {
   requestRecovery,
   setup2FA,
   verify2FA,
-} from "../controllers/auth.controller";
+} from "../controllers/auth/auth.controller";
 import { authenticateToken } from "@game/common/middleware/auth.middleware";
 import { requireRole } from "@game/common/middleware/rbac.middleware";
 
