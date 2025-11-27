@@ -1,112 +1,107 @@
-version: "3.9"
+version: "3.8"
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-      target: runner
-    container_name: app-prod
-    ports:
-      - "5000:5000"
-    env_file:
-      - .env.production
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - app-network
-    restart: always
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--spider",
-          "--quiet",
-          "http://localhost:5000/api/health",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    command: sh -c "npx prisma migrate deploy && yarn start"
-
-  postgres:
+  db-prod:
     image: postgres:16-alpine
-    container_name: postgres-prod
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-myapp_prod}
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: postgres
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./backups:/backups
+      - postgres_data_prod:/var/lib/postgresql/data
+    networks:
+      - venture-prod-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - app-network
-    restart: always
+      start_period: 30s
 
-  redis:
+  redis-prod:
     image: redis:7-alpine
-    container_name: redis-prod
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - redis-data:/data
-      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data_prod:/data
+    networks:
+      - venture-prod-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
-    networks:
-      - app-network
-    restart: always
-    command: >
-      sh -c "redis-server
-      --requirepass ${REDIS_PASSWORD:-changeme}
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --save 300 10
-      --save 60 10000"
+      start_period: 10s
 
-  nginx:
-    image: nginx:alpine
-    container_name: nginx-prod
+  app:
+    image: gigproject/venture-api:${IMAGE_TAG:-latest}
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - app
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: redis-prod
+      REDIS_PORT: 6379
     networks:
-      - app-network
-    restart: always
+      - venture-prod-network
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 15s
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
 volumes:
-  postgres-data:
+  postgres_data_prod:
     driver: local
-  redis-data:
+  redis_data_prod:
     driver: local
 
 networks:
-  app-network:
-    driver: bridge
+  venture-prod-network:
+    driver: overlay
+    attachable: true
