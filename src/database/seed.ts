@@ -1,7 +1,13 @@
-import { prisma, shutdown } from "./prismaClient";
 import bcrypt from "bcryptjs";
 import logger from "@game/common/logger/logger";
 import { env } from "@game/config/env";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+async function shutdown() {
+  await prisma.$disconnect();
+}
 
 export async function SeedAdmin() {
   try {
