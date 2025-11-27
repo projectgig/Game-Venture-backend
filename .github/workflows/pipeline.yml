@@ -109,7 +109,7 @@ jobs:
             # Set environment variables
             export STACK_NAME="venture-staging"
             export STACK_FILE="/root/venture/swarm/staging/stack.yml"
-            export ENV_FILE="/root/venture/.env.staging"
+            export ENV_FILE="/root/venture/.env.development"
             export IMAGE_TAG="dev-latest"
             export DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
 
@@ -186,6 +186,6 @@ jobs:
     steps:
       - name: Failure Summary
         run: |
-          echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please check the logs for more details." >> $GITHUB_STEP_SUMMARY
