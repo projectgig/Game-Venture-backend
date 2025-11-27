@@ -1,8 +1,7 @@
 version: "3.8"
-
 services:
   app-dev:
-    image: ${VENTURE_DOCKERHUB_USERNAME}/venture-api:dev
+    image: ${secrets.VENTURE_DOCKERHUB_USERNAME}/venture-api:dev
     container_name: venture-api-dev
     build:
       context: .
@@ -14,51 +13,33 @@ services:
       - .env.development
     environment:
       NODE_ENV: development
-      REDIS_HOST: venture-redis-dev
-      POSTGRES_HOST: venture-postgres-dev
+      REDIS_HOST: venture-redis-staging
+      REDIS_PORT: 6380
     volumes:
       - .:/app
       - /app/node_modules
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     command: yarn dev
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   redis:
-    container_name: venture-redis-dev
-    image: redis:7-alpine
+    container_name: venture-redis-staging
+    image: redis:alpine
     restart: unless-stopped
     ports:
       - "6380:6379"
-    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data_dev:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
+      retries: 5
       timeout: 3s
-      retries: 10
-
-  postgres:
-    container_name: venture-postgres-dev
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-venture}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-venture}
-      POSTGRES_DB: ${POSTGRES_DB:-venture_dev}
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-venture}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
 volumes:
   redis_data_dev:
-  postgres_data_dev:
