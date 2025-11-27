@@ -1,4 +1,4 @@
-name: CI/CD Pipeline for Venture API
+name: Venture Automated Deployment Pipeline
 
 on:
   push:
@@ -9,9 +9,7 @@ on:
 
 env:
   VENTURE_NODE_VERSION: "20"
-  VENTURE_IMAGE_NAME: gigproject/venture-api
-  STAGING_PORT: 5000
-  PROD_PORT: 8000
+  DOCKER_IMAGE: gigproject/venture-api
 
 jobs:
   lint:
@@ -19,14 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.VENTURE_NODE_VERSION }}
           cache: yarn
-      - run: yarn install --frozen-lockfile
-      - run: yarn prettier --write .
-      - run: yarn run lint
-      - run: yarn run type-check
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Run Prettier
+        run: yarn prettier --write .
+
+      - name: Run Linter
+        run: yarn run lint
+
+      - name: Type Check
+        run: yarn run type-check
 
   build-and-push:
     name: Build & Push Docker Image
@@ -34,26 +41,40 @@ jobs:
     needs: [lint]
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/setup-buildx-action@v3
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.VENTURE_DOCKERHUB_USERNAME }}
           password: ${{ secrets.VENTURE_DOCKERHUB_TOKEN }}
+
+      - name: Set image tags
+        id: tags
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "IMAGE_TAG=latest" >> $GITHUB_OUTPUT
+            echo "DOCKERFILE=./Dockerfile.prod" >> $GITHUB_OUTPUT
+          else
+            echo "IMAGE_TAG=dev-latest" >> $GITHUB_OUTPUT
+            echo "DOCKERFILE=./Dockerfile.dev" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         run: |
-          IMAGE_TAG=${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
-          docker build -f ${{ github.ref == 'refs/heads/dev' && './Dockerfile.dev' || './Dockerfile.prod' }} -t ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} .
-          docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
-          docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
-          docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
-      - name: Build and push Docker image
-        run: |
-          IMAGE_TAG=${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
-          docker build -f ${{ github.ref == 'refs/heads/dev' && './Dockerfile.dev' || './Dockerfile.prod' }} -t ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} .
-          docker push ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }}
-          docker tag ${{ env.VENTURE_IMAGE_NAME }}:${{ github.sha }} ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
-          docker push ${{ env.VENTURE_IMAGE_NAME }}:$IMAGE_TAG
+          IMAGE_TAG=${{ steps.tags.outputs.IMAGE_TAG }}
+          DOCKERFILE=${{ steps.tags.outputs.DOCKERFILE }}
+
+          # Build with commit SHA
+          docker build -f $DOCKERFILE \
+            -t ${{ env.DOCKER_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG \
+            .
+
+          # Push both tags
+          docker push ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG
 
   deploy-staging:
     name: Deploy to Staging
@@ -61,137 +82,49 @@ jobs:
     needs: build-and-push
     if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
     steps:
-      - name: Deploy to Staging Server
+      - uses: actions/checkout@v4
+
+      - name: Copy Swarm files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VENTURE_HOST }}
+          username: ${{ secrets.VENTURE_SSH_USERNAME }}
+          key: ${{ secrets.VENTURE_SSH_KEY }}
+          source: "swarm/staging/*,scripts/deploy-staging.sh"
+          target: "/root/venture/"
+          strip_components: 0
+
+      - name: Deploy to Staging
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VENTURE_HOST }}
           username: ${{ secrets.VENTURE_SSH_USERNAME }}
           key: ${{ secrets.VENTURE_SSH_KEY }}
           script: |
-            set -e
-            IMAGE="${{ env.VENTURE_IMAGE_NAME }}:dev-latest"
-            NETWORK="venture-staging-network"
-            ENV_FILE="/root/venture/.env.development"
-            COMMIT_SHA="${{ github.sha }}"
-            API_CONTAINER="venture-api-staging"
-            REDIS_CONTAINER="venture-redis-staging"
-            REDIS_PORT=6380
-            API_PORT="${{ env.STAGING_PORT }}"
+            cd /root/venture
 
-            echo "=== Pulling new image ==="
-            # Stop old API first to free image usage
-            docker stop "$API_CONTAINER" 2>/dev/null || true
-            docker rm "$API_CONTAINER" 2>/dev/null || true
+            # Make script executable
+            chmod +x scripts/deploy-staging.sh
 
-            echo "Pulling $IMAGE..."
-            docker pull "$IMAGE"
+            # Set environment variables
+            export STACK_NAME="venture-staging"
+            export STACK_FILE="/root/venture/swarm/staging/stack.yml"
+            export ENV_FILE="/root/venture/.env.staging"
+            export IMAGE_TAG="dev-latest"
+            export DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
 
-            echo "=== Cleaning old Redis ==="
-            docker stop "$REDIS_CONTAINER" 2>/dev/null || true
-            docker rm "$REDIS_CONTAINER" 2>/dev/null || true
+            # Run deployment script
+            ./scripts/deploy-staging.sh
 
-            # Stop any container still using Redis port
-            docker ps --filter "publish=$REDIS_PORT" -q | xargs -r docker stop
-            docker ps --filter "publish=$REDIS_PORT" -q | xargs -r docker rm
-
-            # Stop any redis:*-alpine image containers
-            docker ps -a --filter "ancestor=redis" --format '{{.ID}}' | xargs -r docker stop
-            docker ps -a --filter "ancestor=redis" --format '{{.ID}}' | xargs -r docker rm
-
-            echo "=== Ensuring port $REDIS_PORT is free ==="
-            if lsof -i :$REDIS_PORT > /dev/null 2>&1; then
-              echo "Killing any processes on port $REDIS_PORT..."
-              fuser -k $REDIS_PORT/tcp || true
-            fi
-            sleep 2
-
-            echo "=== Recreating Docker network safely ==="
-            if docker network inspect "$NETWORK" >/dev/null 2>&1; then
-              echo "Network $NETWORK exists. Removing..."
-              if ! docker network rm "$NETWORK" 2>/dev/null; then
-                echo "Network removal failed — force disconnecting containers..."
-                docker network inspect "$NETWORK" -f '{{range .Containers}}{{.Name}} {{end}}' | xargs -r -n1 docker network disconnect -f "$NETWORK" || true
-                docker network rm "$NETWORK" || true
-              fi
-            fi
-
-            docker network create "$NETWORK" || echo "Network already exists, continuing..."
-
-            echo "=== Starting Redis ==="
-            docker run -d \
-              --name "$REDIS_CONTAINER" \
-              --network "$NETWORK" \
-              -p "$REDIS_PORT:$REDIS_PORT" \
-              --restart unless-stopped \
-              redis:7-alpine \
-              redis-server --appendonly yes --save 60 1
-
-            echo "Waiting for Redis to be ready..."
-            timeout=30
-            elapsed=0
-            until docker exec "$REDIS_CONTAINER" redis-cli ping > /dev/null 2>&1; do
-              sleep 2
-              elapsed=$((elapsed + 2))
-              if [ $elapsed -ge $timeout ]; then
-                echo "Error: Redis failed to start after $timeout seconds"
-                docker logs "$REDIS_CONTAINER"
-                exit 1
-              fi
-            done
-            echo "Redis is ready!"
-
-            echo "=== Running database migrations ==="
-            docker run --rm \
-              --network "$NETWORK" \
-              --env-file "$ENV_FILE" \
-              --user root \
-              "$IMAGE" \
-              npx prisma migrate deploy || echo "Warning: No migrations or failed (continuing)"
-
-            echo "=== Starting API container ==="
-            docker run -d \
-              --name "$API_CONTAINER" \
-              --network "$NETWORK" \
-              -p "$API_PORT:$API_PORT" \
-              --env-file "$ENV_FILE" \
-              --user root \
-              --restart unless-stopped \
-              "$IMAGE"
-
-            echo "=== Running health checks ==="
-            max_attempts=15
-            attempt=1
-            success=0
-            while [ $attempt -le $max_attempts ]; do
-              if curl -f -s "http://localhost:$API_PORT/api/health" > /dev/null; then
-                echo "Health check passed (attempt $attempt)"
-                success=$((success + 1))
-                if [ $success -ge 3 ]; then
-                  echo "Health checks passed consistently!"
-                  break
-                fi
-              else
-                success=0
-                echo "Health check failed (attempt $attempt)"
-              fi
-              echo "Attempt $attempt/$max_attempts (successes: $success/3)"
-              sleep 5
-              attempt=$((attempt + 1))
-            done
-
-            if [ $success -lt 3 ]; then
-              echo "Error: Health check failed. Rolling back..."
-              docker stop "$API_CONTAINER" || true
-              docker rm "$API_CONTAINER" || true
-              exit 1
-            fi
-
-            echo "=== Cleaning up unused images ==="
-            docker image prune -f
-
-            echo "--------------- Staging deployment SUCCESSFUL! ---------------"
-            echo "API: http://$(hostname):$API_PORT"
-            echo "Redis: $(hostname):$REDIS_PORT"
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "### Staging Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: Staging" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.DOCKER_IMAGE }}:dev-latest" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: http://${{ secrets.VENTURE_HOST }}:5000" >> $GITHUB_STEP_SUMMARY
 
   deploy-production:
     name: Deploy to Production
@@ -199,115 +132,60 @@ jobs:
     needs: build-and-push
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - name: Deploy to Production Server
+      - uses: actions/checkout@v4
+
+      - name: Copy Swarm files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VENTURE_HOST }}
+          username: ${{ secrets.VENTURE_SSH_USERNAME }}
+          key: ${{ secrets.VENTURE_SSH_KEY }}
+          source: "swarm/production/*,scripts/deploy-production.sh"
+          target: "/root/venture/"
+          strip_components: 0
+
+      - name: Deploy to Production (Blue-Green)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VENTURE_HOST }}
           username: ${{ secrets.VENTURE_SSH_USERNAME }}
           key: ${{ secrets.VENTURE_SSH_KEY }}
           script: |
-            set -e
-            export IMAGE=${{ env.VENTURE_IMAGE_NAME }}:latest
-            export NETWORK=venture-prod-network
-            export ENV_FILE=/root/venture/.env.production
-            export COMMIT_SHA=${{ github.sha }}
+            cd /root/venture
 
-            # Check for .env file
-            if [ ! -f "$ENV_FILE" ]; then
-              echo ".env.production does not exist! Deployment aborted."
-              exit 1
-            fi
+            # Make script executable
+            chmod +x scripts/deploy-production.sh
 
-            # Append COMMIT_SHA to .env
-            echo "COMMIT_SHA=$COMMIT_SHA" >> "$ENV_FILE"
+            # Set environment variables
+            export STACK_FILE="/root/venture/swarm/production/stack.yml"
+            export ENV_FILE="/root/venture/.env.production"
+            export IMAGE_TAG="latest"
+            export DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
 
-            # Pull latest image
-            docker pull $IMAGE
+            # Run deployment script
+            ./scripts/deploy-production.sh
 
-            # Blue-Green Deployment Logic
-            CURRENT_CONTAINER=$(docker ps -q --filter "name=venture-api-prod-blue" --filter "status=running")
-            if [ -n "$CURRENT_CONTAINER" ]; then
-              NEW_COLOR="green"
-              OLD_COLOR="blue"
-            else
-              NEW_COLOR="blue"
-              OLD_COLOR="green"
-            fi
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "### Production Deployment Successful! " >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: Production" >> $GITHUB_STEP_SUMMARY
+          echo "- **Strategy**: Blue-Green Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.DOCKER_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: http://${{ secrets.VENTURE_HOST }}:8000" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Zero-downtime deployment completed!**" >> $GITHUB_STEP_SUMMARY
 
-            echo "Deploying to $NEW_COLOR container..."
-
-            # Remove old network if exists
-            docker network rm $NETWORK 2>/dev/null || true
-            docker network create $NETWORK 2>/dev/null || true
-
-            # Start Redis
-            docker run -d \
-              --name venture-redis-prod \
-              --network $NETWORK \
-              -p 6380:6379 \
-              --env-file "$ENV_FILE" \
-              --user root \
-              --restart unless-stopped \
-              redis:7-alpine
-
-            # Start Postgres
-            docker run -d \
-              --name venture-postgres-prod \
-              --network $NETWORK \
-              -p 5432:5432 \
-              --env-file "$ENV_FILE" \
-              --user root \
-              --restart unless-stopped \
-              postgres:16-alpine
-
-            # Run database migrations
-            docker run --rm \
-              --network $NETWORK \
-              --env-file "$ENV_FILE" \
-              $IMAGE \
-              npx prisma migrate deploy
-
-            # Start new container
-            docker run -d \
-              --name venture-api-prod-$NEW_COLOR \
-              --network $NETWORK \
-              -p ${{ env.PROD_PORT }}:${{ env.PROD_PORT }} \
-              --env-file "$ENV_FILE" \
-              --user root \
-              --restart unless-stopped \
-              $IMAGE
-
-            # Health check
-            max_attempts=15
-            attempt=1
-            success=0
-            while [ $attempt -le $max_attempts ]; do
-              if curl -f -s http://localhost:${{ env.PROD_PORT }}/api/health > /dev/null; then
-                echo "Health check passed (attempt $attempt)"
-                success=$((success + 1))
-                if [ $success -ge 3 ]; then
-                  echo "Health checks consistently passing"
-                  break
-                fi
-              else
-                success=0
-                if [ $attempt -eq $max_attempts ]; then
-                  echo "Health check failed after $max_attempts attempts, rolling back..."
-                  docker stop venture-api-prod-$NEW_COLOR || true
-                  docker rm venture-api-prod-$NEW_COLOR || true
-                  exit 1
-                fi
-              fi
-              echo "Health check attempt $attempt/$max_attempts (successes: $success/3)"
-              sleep 5
-              attempt=$((attempt + 1))
-            done
-
-            # Stop and remove old container
-            docker stop venture-api-prod-$OLD_COLOR 2>/dev/null || true
-            docker rm venture-api-prod-$OLD_COLOR 2>/dev/null || true
-
-            # Clean up unused images
-            docker image prune -f
-
-            echo "Production deployment completed successfully! Active container: venture-api-prod-$NEW_COLOR"
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [lint, build-and-push, deploy-staging, deploy-production]
+    if: failure()
+    steps:
+      - name: Failure Summary
+        run: |
+          echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the logs for more details." >> $GITHUB_STEP_SUMMARY

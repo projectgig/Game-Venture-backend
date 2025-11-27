@@ -1,16 +1,17 @@
 version: "3.8"
 
 services:
-  db-prod:
+  # PostgreSQL Database
+  db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: postgres
+      POSTGRES_DB: ${DB_NAME:-venture_prod}
     volumes:
-      - postgres_data_prod:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
     networks:
-      - venture-prod-network
+      - backend
     deploy:
       replicas: 1
       placement:
@@ -20,9 +21,10 @@ services:
         condition: on-failure
         delay: 5s
         max_attempts: 3
-      update_config:
-        parallelism: 1
-        delay: 10s
+      labels:
+        - "app=venture-api"
+        - "environment=production"
+        - "service=database"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -30,13 +32,21 @@ services:
       retries: 5
       start_period: 30s
 
-  redis-prod:
+  # Redis Cache
+  redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD}",
+      ]
     volumes:
-      - redis_data_prod:/data
+      - redis_data:/data
     networks:
-      - venture-prod-network
+      - backend
     deploy:
       replicas: 1
       placement:
@@ -46,25 +56,41 @@ services:
         condition: on-failure
         delay: 5s
         max_attempts: 3
+      labels:
+        - "app=venture-api"
+        - "environment=production"
+        - "service=cache"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--no-auth-warning",
+          "-a",
+          "${REDIS_PASSWORD}",
+          "ping",
+        ]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 10s
 
+  # API Application
   app:
-    image: gigproject/venture-api:${IMAGE_TAG:-latest}
+    image: ${DOCKER_IMAGE}:${IMAGE_TAG}
     ports:
       - "${APP_PORT:-8000}:8000"
     environment:
       NODE_ENV: production
       PORT: 8000
       DATABASE_URL: ${DATABASE_URL}
-      REDIS_HOST: redis-prod
+      REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      # Add other environment variables
     networks:
-      - venture-prod-network
+      - backend
     deploy:
       replicas: 3
       update_config:
@@ -72,6 +98,7 @@ services:
         delay: 15s
         order: start-first
         failure_action: rollback
+        monitor: 60s
       rollback_config:
         parallelism: 1
         delay: 10s
@@ -81,6 +108,10 @@ services:
         delay: 5s
         max_attempts: 3
         window: 120s
+      labels:
+        - "app=venture-api"
+        - "environment=production"
+        - "service=api"
       resources:
         limits:
           cpus: "1.0"
@@ -94,14 +125,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    depends_on:
+      - db
+      - redis
 
 volumes:
-  postgres_data_prod:
+  db_data:
     driver: local
-  redis_data_prod:
+    labels:
+      - "app=venture-api"
+      - "environment=production"
+  redis_data:
     driver: local
+    labels:
+      - "app=venture-api"
+      - "environment=production"
 
 networks:
-  venture-prod-network:
+  backend:
     driver: overlay
     attachable: true
+    labels:
+      - "app=venture-api"
+      - "environment=production"
