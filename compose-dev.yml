@@ -23,9 +23,6 @@ services:
         condition: service_healthy
     command: yarn dev
 
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   redis:
     container_name: venture-redis-staging
     image: redis:alpine
