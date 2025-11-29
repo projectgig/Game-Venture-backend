@@ -93,6 +93,6 @@
     "db:push:prod": "cross-env NODE_ENV=production dotenv -e .env.production -- prisma db push",
     "db:studio:dev": "cross-env NODE_ENV=development dotenv -e .env.development -- prisma studio",
     "db:studio:prod": "cross-env NODE_ENV=production dotenv -e .env.production -- prisma studio",
-    "seed:dev": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seed.ts"
+    "seed:dev": "cross-env NODE_ENV=development dotenv -e .env.development -- ts-node -r tsconfig-paths/register src/database/seed.ts"
   }
 }

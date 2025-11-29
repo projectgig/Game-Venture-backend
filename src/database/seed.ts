@@ -9,7 +9,7 @@ async function shutdown() {
   await prisma.$disconnect();
 }
 
-export async function SeedAdmin() {
+async function SeedAdmin() {
   try {
     const hashedPassword = await bcrypt.hash(env.ADMIN_PASSWORD, 10);
 
@@ -35,3 +35,5 @@ export async function SeedAdmin() {
     await shutdown();
   }
 }
+
+SeedAdmin();
