@@ -1,34 +1,22 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
-
 import { Company, CompanyActivity } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
-import loggerInstance from "@game/common/logger/logger.service";
-import {
-  disable2FASchema,
-  enable2FASchema,
-  recoveryRequestSchema,
-  verify2FASchema,
-} from "@game/validation/auth.schema";
-import { TwoFactorService } from "@game/services/twofa.service";
+import loggerInstance from "@game/core/common/logger/logger.service";
 import jwt from "jsonwebtoken";
 import speakeasy from "speakeasy";
 import { encrypt } from "@game/lib/crypto";
 import { db, prisma } from "@game/database/prismaClient";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-  verifyToken,
-} from "@game/utils/jwt";
+import * as JWT_UTIL from "@game/utils/jwt";
+import { AuthSchema } from "@game/validation";
+import { TwoFactorService } from "@game/services/twofa.service/twofa.service";
 
-// const loginLimiter = rateLimit({
-//   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-//   max: Number(process.env.RATE_LIMIT_MAX) || 5,
-//   standardHeaders: true,
-//   legacyHeaders: false,
-//   store: new MemoryStore(),
-// });
-
+/**
+ * Login Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password, email, device, location } = req.body;
@@ -95,13 +83,13 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    const accessToken = generateAccessToken({
+    const accessToken = JWT_UTIL.generateAccessToken({
       id: company.id,
       username: company.username,
       role: company.role,
     });
 
-    const refreshToken = generateRefreshToken({
+    const refreshToken = JWT_UTIL.generateRefreshToken({
       id: company.id,
       username: company.username,
       role: company.role,
@@ -138,6 +126,12 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Refresh Token Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export const refreshToken = async (req: Request, res: Response) => {
   try {
     const token = req.cookies?.refreshToken;
@@ -147,7 +141,7 @@ export const refreshToken = async (req: Request, res: Response) => {
         .json({ message: "No refresh token provided" });
     }
 
-    const decoded = verifyToken(token, "refresh") as {
+    const decoded = JWT_UTIL.verifyToken(token, "refresh") as {
       id: string;
       username: string;
     };
@@ -169,13 +163,13 @@ export const refreshToken = async (req: Request, res: Response) => {
         .json({ message: "User no longer valid" });
     }
 
-    const accessToken = generateAccessToken({
+    const accessToken = JWT_UTIL.generateAccessToken({
       id: company.id,
       username: company.username,
       role: company.role,
     });
 
-    const refreshToken = generateRefreshToken({
+    const refreshToken = JWT_UTIL.generateRefreshToken({
       id: company.id,
       username: company.username,
       role: company.role,
@@ -203,6 +197,12 @@ export const refreshToken = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Logout Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export const logout = async (req: Request, res: Response) => {
   try {
     res.clearCookie("refreshToken");
@@ -215,8 +215,14 @@ export const logout = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export async function verify2FA(req: Request, res: Response) {
-  const { token, backupCode, tempToken } = verify2FASchema.parse(
+  const { token, backupCode, tempToken } = AuthSchema.verify2FASchema.parse(
     req.body
   ) as any;
   console.log("tempToken:", tempToken);
@@ -232,8 +238,6 @@ export async function verify2FA(req: Request, res: Response) {
       .status(StatusCodes.BAD_REQUEST)
       .json({ message: "token or backupCode missing" });
   }
-
-  console.log("Verify secret:", process.env.JWT_2FA_SECRET);
 
   let payload: any;
   try {
@@ -267,13 +271,13 @@ export async function verify2FA(req: Request, res: Response) {
     return res.status(StatusCodes.BAD_REQUEST).json({ message: err.message });
   }
 
-  const accessToken = generateAccessToken({
+  const accessToken = JWT_UTIL.generateAccessToken({
     id: company.id,
     username: company.username,
     role: company.role,
   });
 
-  const refreshToken = generateRefreshToken({
+  const refreshToken = JWT_UTIL.generateRefreshToken({
     id: company.id,
     username: company.username,
     role: company.role,
@@ -311,6 +315,13 @@ export async function verify2FA(req: Request, res: Response) {
   });
 }
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
+
 export async function setup2FA(req: Request, res: Response) {
   if (!req.user) return res.status(401).json({ error: "Unauthenticated" });
 
@@ -319,10 +330,17 @@ export async function setup2FA(req: Request, res: Response) {
   res.json({ secret, qr });
 }
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
+
 export async function enable2FA(req: Request, res: Response) {
   if (!req.user) return res.status(401).json({ error: "Unauthenticated" });
 
-  const { token } = enable2FASchema.parse(req.body);
+  const { token } = AuthSchema.enable2FASchema.parse(req.body);
   const { backupCodes } = await TwoFactorService.verifyAndEnable(
     req.user.id,
     token
@@ -339,10 +357,16 @@ export async function enable2FA(req: Request, res: Response) {
   res.json({ backupCodes });
 }
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export async function disable2FA(req: Request, res: Response) {
   if (!req.user) return res.status(401).json({ error: "Unauthenticated" });
 
-  const body = disable2FASchema.parse(req.body);
+  const body = AuthSchema.disable2FASchema.parse(req.body);
   await TwoFactorService.disable(req.user.id, body.token, body.backupCode);
 
   await prisma.auditLog.create({
@@ -355,6 +379,12 @@ export async function disable2FA(req: Request, res: Response) {
   res.json({ message: "2FA disabled" });
 }
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export async function getBackupCodes(req: Request, res: Response) {
   if (!req.user) return res.status(401).json({ error: "Unauthenticated" });
 
@@ -362,10 +392,16 @@ export async function getBackupCodes(req: Request, res: Response) {
   res.json({ remaining: codes.length });
 }
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export async function requestRecovery(req: Request, res: Response) {
   if (!req.user) return res.status(401).json({ error: "Unauthenticated" });
 
-  const { reason } = recoveryRequestSchema.parse(req.body);
+  const { reason } = AuthSchema.recoveryRequestSchema.parse(req.body);
 
   const existing = await prisma.twoFactorRecovery.findFirst({
     where: { companyId: req.user.id, status: "PENDING" },
@@ -395,6 +431,12 @@ export async function requestRecovery(req: Request, res: Response) {
   res.json({ message: "Recovery requested. Admin will review." });
 }
 
+/**
+ * Verify 2FA Controller
+ * @param req
+ * @param res
+ * @returns
+ */
 export async function approveRecovery(req: Request, res: Response) {
   const { recoveryId } = req.params;
   const recovery = await prisma.twoFactorRecovery.findUnique({

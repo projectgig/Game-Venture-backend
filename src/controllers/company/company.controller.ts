@@ -1,32 +1,37 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { db, prisma } from "../../database/prismaClient";
-import { Company, Prisma, Role } from "@prisma/client";
-import { roleHierarchy } from "@game/common/middleware/rbac.middleware";
+import { Company, Prisma, Role, Status } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
-import loggerInstance from "@game/common/logger/logger.service";
 import { handleETag } from "@game/utils/etagUtil";
+import { roleHierarchy } from "@game/core/common/middleware/rbac.middleware";
+import loggerInstance from "@game/core/common/logger/logger.service";
 
+/**
+ * Create a new user with hirarchy
+ * @param req
+ * @param res
+ * @returns
+ */
 export const createUser = async (req: Request, res: Response) => {
+  const {
+    username,
+    password,
+    role,
+    contactNumber,
+    remarks,
+    rechargePerm,
+    withdrawPerm,
+    agentProtect,
+    email,
+    status,
+    lastLoggedIn,
+  } = req.body;
   try {
     const creator = req.user;
     if (!creator) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-
-    const {
-      username,
-      password,
-      role,
-      contactNumber,
-      remarks,
-      rechargePerm,
-      withdrawPerm,
-      agentProtect,
-      email,
-      status,
-      lastLoggedIn,
-    } = req.body;
 
     if (!username || !password || !role) {
       return res
@@ -48,15 +53,21 @@ export const createUser = async (req: Request, res: Response) => {
       });
     }
 
-    const existing = await db.findUnique<Company>(
+    const existing = await db.findFirst<Company>(
       "company",
-      { where: { username } },
+      { where: { OR: [{ username }, { email }] } },
       { ttl: 60 }
     );
+
     if (existing) {
-      return res
-        .status(StatusCodes.CONFLICT)
-        .json({ message: "Username already exists" });
+      const message =
+        existing.username === username
+          ? "Username already taken"
+          : "Email already registered";
+
+      return res.status(StatusCodes.CONFLICT).json({
+        message,
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -99,6 +110,12 @@ export const createUser = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Get downline users by parent ID
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getDownline = async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -111,13 +128,52 @@ export const getDownline = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const search = (req.query.q as string) || "";
     const sortBy = (req.query.sort as string) || "createdAt";
+
     const sortOrder =
       (req.query.order as string)?.toUpperCase() === "ASC" ? "ASC" : "DESC";
     const offset = (page - 1) * limit;
 
-    const searchQuery = `%${search}%`;
+    const hasSearch = search.trim() !== "";
+    const searchQuery = hasSearch ? `%${search}%` : "%%";
 
-    // Whitelist of sortable columns to prevent SQL injection
+    let status: Status =
+      (req.query.status as string as Status & "ALL_STATUS") ||
+      ("ACTIVE" as Status);
+
+    if (status === "ALL_STATUS") {
+      status = undefined as unknown as Status;
+    }
+
+    const validStatuses: Status[] = ["ACTIVE", "INACTIVE", "BLOCK", "DELETED"];
+
+    if (status && !validStatuses.includes(status)) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json({ message: "Invalid status" });
+    }
+
+    let role: Role =
+      (req.query.role as string as Role & "ALL") || ("ALL" as Role);
+
+    if (role === "ALL") {
+      role = undefined as unknown as Role;
+    }
+
+    const validRoles: Role[] = [
+      "ADMIN",
+      "DISTRIBUTOR",
+      "SUB_DISTRIBUTOR",
+      "STORE",
+      "PLAYER",
+    ];
+
+    if (role && !validRoles.includes(role)) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json({ message: "Invalid role" });
+    }
+
+    // for prevent sql injection and safety
     const sortableColumns = [
       "username",
       "email",
@@ -139,74 +195,79 @@ export const getDownline = async (req: Request, res: Response) => {
         ? Prisma.sql`ORDER BY d.${Prisma.raw(`"${validSortBy}"`)} ASC NULLS LAST`
         : Prisma.sql`ORDER BY d.${Prisma.raw(`"${validSortBy}"`)} DESC NULLS LAST`;
 
-    // COUNT QUERY (with search applied)
     const countResult = await prisma.$queryRaw<{ total: bigint }[]>`
-      WITH RECURSIVE descendants AS (
-        SELECT id, username, email, "contactNumber"
-        FROM companies
-        WHERE id = ${user.id}
+  WITH RECURSIVE descendants AS (
+    SELECT 
+      id, username, email, "contactNumber", status, role  -- MUST include role here
+    FROM companies
+    WHERE id = ${user.id}
 
-        UNION ALL
+    UNION ALL
 
-        SELECT c.id, c.username, c.email, c."contactNumber"
-        FROM companies c
-        INNER JOIN descendants d ON c."parentId" = d.id
-      )
-      SELECT COUNT(*) AS total
-      FROM descendants
-      WHERE id != ${user.id}
-        AND (
-          username ILIKE ${searchQuery} OR
-          email ILIKE ${searchQuery} OR
-          "contactNumber" ILIKE ${searchQuery}
-        );
-    `;
-
+    SELECT 
+      c.id, c.username, c.email, c."contactNumber", c.status, c.role
+    FROM companies c
+    INNER JOIN descendants d ON c."parentId" = d.id
+  )
+  SELECT COUNT(*) AS total
+  FROM descendants
+  WHERE id != ${user.id}
+    AND (
+      NOT ${hasSearch} OR
+      username ILIKE ${searchQuery} OR
+      email ILIKE ${searchQuery} OR
+      "contactNumber" ILIKE ${searchQuery}
+    )
+    ${status ? Prisma.sql`AND status = ${status}::"Status"` : Prisma.sql``}
+    ${role ? Prisma.sql`AND role = ${role}::"Role"` : Prisma.sql``};
+`;
     const total = Number(countResult[0].total);
 
-    // DATA QUERY (with search + pagination + sorting)
     const downline = await prisma.$queryRaw<any[]>`
-      WITH RECURSIVE descendants AS (
-        SELECT 
-          id, username, role, points, "isActive",
-          "contactNumber", "parentId", "createdAt",
-          email, remarks, status, "rechargePerm",
-          "withdrawPerm", "agentProtect", "lastLoggedIn",
-          "updatedAt"
-        FROM companies
-        WHERE id = ${user.id}
+  WITH RECURSIVE descendants AS (
+    SELECT 
+      id, username, role, points, "isActive",
+      "contactNumber", "parentId", "createdAt",
+      email, remarks, status, "rechargePerm",
+      "withdrawPerm", "agentProtect", "lastLoggedIn",
+      "updatedAt"
+    FROM companies
+    WHERE id = ${user.id}
 
-        UNION ALL
+    UNION ALL
 
-        SELECT 
-          c.id, c.username, c.role, c.points, c."isActive",
-          c."contactNumber", c."parentId", c."createdAt",
-          c.email, c.remarks, c.status, c."rechargePerm",
-          c."withdrawPerm", c."agentProtect", c."lastLoggedIn",
-          c."updatedAt"
-        FROM companies c
-        INNER JOIN descendants d ON c."parentId" = d.id
-      )
-      SELECT 
-        d.*,
-        jsonb_build_object(
-          'id', p.id,
-          'username', p.username,
-          'role', p.role,
-          'contactNumber', p."contactNumber",
-          'email', p.email
-        ) AS parent
-      FROM descendants d
-      LEFT JOIN companies p ON d."parentId" = p.id
-      WHERE d.id != ${user.id}
-        AND (
-          d.username ILIKE ${searchQuery} OR
-          d.email ILIKE ${searchQuery} OR
-          d."contactNumber" ILIKE ${searchQuery}
-        )
-      ${orderByClause}
-      LIMIT ${limit} OFFSET ${offset};
-    `;
+    SELECT 
+      c.id, c.username, c.role, c.points, c."isActive",
+      c."contactNumber", c."parentId", c."createdAt",
+      c.email, c.remarks, c.status, c."rechargePerm",
+      c."withdrawPerm", c."agentProtect", c."lastLoggedIn",
+      c."updatedAt"
+    FROM companies c
+    INNER JOIN descendants d ON c."parentId" = d.id
+  )
+  SELECT 
+    d.*,
+    jsonb_build_object(
+      'id', p.id,
+      'username', p.username,
+      'role', p.role,
+      'contactNumber', p."contactNumber",
+      'email', p.email
+    ) AS parent
+  FROM descendants d
+  LEFT JOIN companies p ON d."parentId" = p.id
+  WHERE d.id != ${user.id}
+    AND (
+      NOT ${hasSearch} OR
+      d.username ILIKE ${searchQuery} OR
+      d.email ILIKE ${searchQuery} OR
+      d."contactNumber" ILIKE ${searchQuery}
+    )
+    ${status ? Prisma.sql`AND d.status = ${status}::"Status"` : Prisma.sql``}
+    ${role ? Prisma.sql`AND d.role = ${role}::"Role"` : Prisma.sql``}
+  ${orderByClause}
+  LIMIT ${limit} OFFSET ${offset};
+`;
 
     const latestUpdate = downline.reduce(
       (max, item) => Math.max(max, new Date(item.updatedAt).getTime()),
@@ -235,6 +296,12 @@ export const getDownline = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Get my users
+ *  @param req
+ * @param res
+ * @returns
+ */
 export const getMyUsers = async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -740,8 +807,6 @@ export const getUsersByParentId = async (req: Request, res: Response) => {
       .json({ message: "Internal server error" });
   }
 };
-
-// util
 
 const assignMap: Record<Role, Role[]> = {
   [Role.ADMIN]: [

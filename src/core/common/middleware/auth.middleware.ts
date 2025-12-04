@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import { db } from "../../database/prismaClient";
 import { verifyToken } from "@game/utils/jwt";
 import { Company, Role } from "@prisma/client";
+import { db } from "@game/database/prismaClient";
 
 export interface AuthRequest extends Request {
   user?: {

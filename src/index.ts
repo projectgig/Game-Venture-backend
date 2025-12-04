@@ -6,9 +6,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import morgan, { StreamOptions } from "morgan";
-import logger from "@game/common/logger/logger.service";
-import exceptionManager from "@game/common/exceptions/index";
-import { env } from "@game/config/env";
+import logger from "@game/core/common/logger/logger.service";
+import exceptionManager from "@game/core/common/exceptions/index";
+import { env } from "@game/core/common/config/env";
 import swaggerSpec from "@game/utils/swagger";
 import swaggerUi from "swagger-ui-express";
 import { mainRoutes } from "@game/routes/index";
@@ -69,6 +69,7 @@ class App {
     }
   }
 
+  // Routes
   private routes(): void {
     this.app.get("/", (_, res: Response) => {
       console.log("Root route hit – sending: Hello World!");

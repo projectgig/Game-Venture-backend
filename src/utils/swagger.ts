@@ -1,5 +1,5 @@
-import loggerInstance from "@game/common/logger/logger.service";
-import { env } from "@game/config/env";
+import loggerInstance from "@game/core/common/logger/logger.service";
+import { env } from "@game/core/common/config/env";
 import swaggerJsdoc from "swagger-jsdoc";
 
 const options: swaggerJsdoc.Options = {

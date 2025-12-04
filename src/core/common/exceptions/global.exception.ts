@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import logger from "@game/common/logger/logger.service";
+import logger from "@game/core/common/logger/logger.service";
 
 export class GlobalExceptionHandler {
   public handleErrors = (

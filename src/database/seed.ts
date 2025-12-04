@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
-import logger from "@game/common/logger/logger";
-import { env } from "@game/config/env";
 import { PrismaClient } from "@prisma/client";
+import { env } from "@game/core/common/config/env";
+import logger from "@game/core/common/logger/logger";
 
 const prisma = new PrismaClient();
 
