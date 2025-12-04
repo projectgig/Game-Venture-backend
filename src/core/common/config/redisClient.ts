@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import { env } from "@game/config/env";
+import { env } from "@game/core/common/config/env";
 
 const redis = new Redis({
   host: env.REDIS_HOST,

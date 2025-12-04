@@ -1,6 +1,6 @@
 import jwt, { SignOptions } from "jsonwebtoken";
-import { env } from "@game/config/env";
 import { Role } from "@prisma/client";
+import { env } from "@game/core/common/config/env";
 
 export interface TokenPayload {
   id: string;

@@ -1,12 +1,8 @@
-import { authenticateToken } from "@game/common/middleware/auth.middleware";
-import { requireRole } from "@game/common/middleware/rbac.middleware";
-import {
-  assignCoin,
-  getMyTransactions,
-  loadCoins,
-  transactionsHistoryHierarchy,
-} from "@game/controllers/coin/coin.controller";
 import { Router } from "express";
+import { authenticateToken } from "@game/core/common/middleware/auth.middleware";
+import { requireRole } from "@game/core/common/middleware/rbac.middleware";
+import { COIN_ROUTES as COIN } from "@game/core/common/constrants/routes";
+import { CoinController } from "@game/controllers";
 
 /**
  * @swagger
@@ -14,8 +10,8 @@ import { Router } from "express";
  *   name: Coins
  *   description: Routes for managing coins
  */
-
 const router = Router();
+router.use(authenticateToken);
 
 /**
  * @swagger
@@ -54,35 +50,28 @@ const router = Router();
  *       400:
  *         description: Invalid input or unauthorized
  */
-router.post(
-  "/load",
-  authenticateToken,
-  requireRole("ADMIN"),
-  async (req, res) => {
-    try {
-      const { amount } = req.body;
+router.post(COIN.LOAD_COINS, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const currentUser = req.user;
 
-      const currentUser = req.user;
+    if (!currentUser) return res.status(401).json({ message: "Unauthorized" });
 
-      if (!currentUser)
-        return res.status(401).json({ message: "Unauthorized" });
+    const adminId = currentUser.id;
 
-      const adminId = currentUser.id;
-
-      if (!adminId || !amount) {
-        return res
-          .status(400)
-          .json({ message: "adminId and amount are required" });
-      }
-
-      const result = await loadCoins(adminId, amount);
-
-      return res.status(200).json(result);
-    } catch (error: any) {
-      return res.status(400).json({ message: error.message });
+    if (!adminId || !amount) {
+      return res
+        .status(400)
+        .json({ message: "adminId and amount are required" });
     }
+
+    const result = await CoinController.loadCoins(adminId, amount);
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
   }
-);
+});
 
 /**
  * @swagger
@@ -125,10 +114,9 @@ router.post(
  *         description: Invalid input or unauthorized
  */
 router.post(
-  "/assign-coin",
-  authenticateToken,
+  COIN.ASSIGN_COIN,
   requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
-  assignCoin
+  CoinController.assignCoin
 );
 
 /**
@@ -175,10 +163,9 @@ router.post(
  *         description: Invalid input or unauthorized
  */
 router.get(
-  "/transactions-hierarchy",
-  authenticateToken,
+  COIN.TRANSACTIONS_HIERARCHY,
   requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE"),
-  transactionsHistoryHierarchy
+  CoinController.transactionsHistoryHierarchy
 );
 
 /**
@@ -225,10 +212,9 @@ router.get(
  *         description: Invalid input or unauthorized
  */
 router.get(
-  "/my-transactions",
-  authenticateToken,
+  COIN.GET_MY_TRANSACTIONS,
   requireRole("ADMIN", "DISTRIBUTOR", "SUB_DISTRIBUTOR", "STORE", "PLAYER"),
-  getMyTransactions
+  CoinController.getMyTransactions
 );
 
 export const coinRoutes = router;

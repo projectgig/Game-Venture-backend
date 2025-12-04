@@ -4,6 +4,12 @@ import { db, prisma } from "@game/database/prismaClient";
 import { canAssign, isInMyHierarchy } from "../company/company.controller";
 import { StatusCodes } from "http-status-codes";
 
+/**
+ * Load coins for admin only
+ * @param adminId
+ * @param amount
+ * @returns
+ */
 export async function loadCoins(adminId: string, amount: number) {
   if (amount <= 0) throw new Error("Invalid amount");
 
@@ -79,6 +85,12 @@ export async function loadCoins(adminId: string, amount: number) {
   });
 }
 
+/**
+ * Load coins to user wallet hierarchy order
+ * @param req
+ * @param res
+ * @returns
+ */
 export const assignCoin = async (req: Request, res: Response) => {
   try {
     const sender = req.user;
@@ -133,34 +145,47 @@ export const assignCoin = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Insufficient balance" });
 
     const newSenderBal = Number(senderWallet.balance) - amount;
-    const newTargetBal = +targetWallet.balance + amount;
+    const newTargetBal = +targetWallet.balance + +amount;
 
     await prisma.$transaction(async (tx) => {
+      // sender wallet
       await tx.wallet.update({
         where: { id: senderWallet.id },
         data: { balance: newSenderBal },
       });
 
+      // target wallet
       await tx.wallet.update({
         where: { id: targetWallet.id },
         data: { balance: newTargetBal },
       });
 
+      // update sender points
       await tx.company.update({
         where: { id: senderCompany.id },
-        data: { points: newSenderBal },
+        data: {
+          points: {
+            decrement: amount,
+          },
+        },
       });
 
+      // update target points
       await tx.company.update({
         where: { id: targetCompany.id },
-        data: { points: newTargetBal },
+        data: {
+          points: {
+            increment: amount,
+          },
+        },
       });
 
+      // sender ledger
       await tx.ledger.create({
         data: {
           companyId: senderCompany.id,
           walletId: senderWallet.id,
-          type: "RECHARGE",
+          type: "WITHDRAW",
           amount,
           balance: newSenderBal,
           sourceType: "COMPANY",
@@ -169,11 +194,12 @@ export const assignCoin = async (req: Request, res: Response) => {
         },
       });
 
+      // target ledger
       await tx.ledger.create({
         data: {
           companyId: targetCompany.id,
           walletId: targetWallet.id,
-          type: "WITHDRAW",
+          type: "RECHARGE",
           amount,
           balance: newTargetBal,
           sourceType: "COMPANY",
@@ -194,6 +220,12 @@ export const assignCoin = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Get transactions history for user hierarchy
+ * @param req
+ * @param res
+ * @returns
+ */
 export const transactionsHistoryHierarchy = async (
   req: Request,
   res: Response
@@ -254,6 +286,12 @@ export const transactionsHistoryHierarchy = async (
   }
 };
 
+/**
+ * Get current user transactions
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getMyTransactions = async (req: Request, res: Response) => {
   try {
     const user = req.user;

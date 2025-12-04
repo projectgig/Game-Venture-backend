@@ -1,18 +1,8 @@
 import { Router } from "express";
-import {
-  approveRecovery,
-  disable2FA,
-  enable2FA,
-  getBackupCodes,
-  login,
-  logout,
-  refreshToken,
-  requestRecovery,
-  setup2FA,
-  verify2FA,
-} from "../controllers/auth/auth.controller";
-import { authenticateToken } from "@game/common/middleware/auth.middleware";
-import { requireRole } from "@game/common/middleware/rbac.middleware";
+import { authenticateToken } from "@game/core/common/middleware/auth.middleware";
+import { requireRole } from "@game/core/common/middleware/rbac.middleware";
+import { AUTH_ROUTES as AUTH } from "@game/core/common/constrants/routes";
+import { AuthController } from "@game/controllers";
 
 /**
  * @swagger
@@ -20,7 +10,6 @@ import { requireRole } from "@game/common/middleware/rbac.middleware";
  *   name: Auth
  *   description: Authentication routes
  */
-
 const router = Router();
 
 /**
@@ -48,8 +37,7 @@ const router = Router();
  *       401:
  *         description: Invalid credentials
  */
-router.post("/login", login);
-
+router.post(AUTH.LOGIN, AuthController.login);
 /**
  * @swagger
  * /api/auth/logout:
@@ -62,38 +50,27 @@ router.post("/login", login);
  *       200:
  *         description: Logout successful
  */
-router.post("/logout", logout);
+router.post(AUTH.LOGOUT, AuthController.logout);
+router.post(AUTH.REFRESH_TOKEN, AuthController.refreshToken);
+router.post(AUTH.VERIFY_2FA, AuthController.verify2FA);
 
 /**
- * @swagger
- * /api/auth/refreshToken:
- *   post:
- *     summary: Refresh access token
- *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Access token refreshed
- *       401:
- *         description: Unauthorized
+ * Authenticated Routes
  */
-router.post("/refreshToken", refreshToken);
-router.post("/2fa/verify", verify2FA);
-
 router.use(authenticateToken);
 
-router.post("/2fa/setup", setup2FA);
-router.post("/2fa/enable", enable2FA);
-router.post("/2fa/disable", disable2FA);
-router.get("/2fa/backup-codes", getBackupCodes);
-router.post("/2fa/recovery/request", requestRecovery);
+router.post(AUTH.SETUP_2FA, AuthController.setup2FA);
+router.post(AUTH.ENABLE_2FA, AuthController.enable2FA);
+router.post(AUTH.DISABLE_2FA, AuthController.disable2FA);
+router.get(AUTH.BACKUP_CODES, AuthController.getBackupCodes);
 
-// Admin route
+router.post(AUTH.REQUEST_RECOVERY, AuthController.requestRecovery);
+
+// Admin-only
 router.post(
-  "/2fa/recovery/approve/:recoveryId",
+  AUTH.APPROVE_RECOVERY,
   requireRole("ADMIN"),
-  approveRecovery
+  AuthController.approveRecovery
 );
 
 export const authRoutes = router;
