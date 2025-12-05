@@ -217,4 +217,4 @@ router.get(
   CoinController.getMyTransactions
 );
 
-export const coinRoutes = router;
+export const COIN_ROUTES = router;

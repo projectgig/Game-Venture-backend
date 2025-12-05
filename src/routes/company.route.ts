@@ -2092,4 +2092,4 @@ router.get(
   Company.getComparativeAnalysis
 );
 
-export const companyRoutes = router;
+export const COMPANY_ROUTE = router;

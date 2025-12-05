@@ -1,7 +1,8 @@
 import express from "express";
-import { authRoutes } from "./auth.routes";
-import { companyRoutes } from "./company.route";
-import { coinRoutes } from "./coin.route";
+import { AUTH_ROUTES } from "./auth.routes";
+import { COMPANY_ROUTE } from "./company.route";
+import { COIN_ROUTES } from "./coin.route";
+import { SUPPORT_TICKET_ROUTES } from "./support-ticket.route";
 
 class MainRoutes {
   public router = express.Router();
@@ -11,9 +12,10 @@ class MainRoutes {
   }
 
   private initializeRoutes() {
-    this.router.use("/auth", authRoutes);
-    this.router.use("/company", companyRoutes);
-    this.router.use("/coin", coinRoutes);
+    this.router.use("/auth", AUTH_ROUTES);
+    this.router.use("/company", COMPANY_ROUTE);
+    this.router.use("/coin", COIN_ROUTES);
+    this.router.use("/support-tickets", SUPPORT_TICKET_ROUTES);
   }
 }
 
