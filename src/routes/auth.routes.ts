@@ -73,4 +73,4 @@ router.post(
   AuthController.approveRecovery
 );
 
-export const authRoutes = router;
+export const AUTH_ROUTES = router;
