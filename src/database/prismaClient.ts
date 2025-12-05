@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
+
 import { PrismaClient } from "@prisma/client";
 import pRetry, { AbortError } from "p-retry";
 import Redis from "ioredis";

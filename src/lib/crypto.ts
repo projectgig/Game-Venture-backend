@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import crypto from "crypto";
 
 const ALGORITHM = "aes-256-gcm";

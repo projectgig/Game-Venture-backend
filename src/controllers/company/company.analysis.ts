@@ -1,14 +1,7 @@
 import { Request, Response } from "express";
-import {
-  PrismaClient,
-  Role,
-  LedgerType,
-  GameResult,
-  Status,
-} from "@prisma/client";
+import { Role, LedgerType, GameResult, Status } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
-
-const prisma = new PrismaClient();
+import { prisma } from "@game/database/prismaClient";
 
 interface DashboardFilters {
   startDate?: Date;
@@ -40,6 +33,12 @@ function convertToCSV(data: any): string {
   return rows.join("\n");
 }
 
+/**
+ * Get downline dashboard mean statistics
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getDownlineDashboard = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id as string;
@@ -1441,6 +1440,12 @@ function generateInsights(comparison: any): string[] {
   return insights;
 }
 
+/**
+ * Get sales analysis
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getSalesAnalysis = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;

@@ -198,7 +198,7 @@ export const getDownline = async (req: Request, res: Response) => {
     const countResult = await prisma.$queryRaw<{ total: bigint }[]>`
   WITH RECURSIVE descendants AS (
     SELECT 
-      id, username, email, "contactNumber", status, role  -- MUST include role here
+      id, username, email, "contactNumber", status, role
     FROM companies
     WHERE id = ${user.id}
 
@@ -371,6 +371,12 @@ export const getMyUsers = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Get user by id
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getUser = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -440,6 +446,12 @@ export const getUser = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Get me
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getMe = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -499,6 +511,12 @@ export const getMe = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Update user
+ * @param req
+ * @param res
+ * @returns
+ */
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -560,6 +578,12 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Update user profile
+ * @param req
+ * @param res
+ * @returns
+ */
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -602,6 +626,12 @@ export const updateUserProfile = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Change Password
+ * @param req
+ * @param res
+ * @returns
+ */
 export const changePassword = async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -644,6 +674,12 @@ export const changePassword = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Toggle user status
+ * @param req
+ * @param res
+ * @returns
+ */
 export const toggleUserStatus = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -689,6 +725,12 @@ export const toggleUserStatus = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Update user coin
+ * @param req
+ * @param res
+ * @returns
+ */
 export const updateUserCoin = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -735,6 +777,12 @@ export const updateUserCoin = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Delete user
+ * @param req
+ * @param res
+ * @returns
+ */
 export const deletedUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -776,6 +824,12 @@ export const deletedUser = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Get users by parent id
+ * @param req
+ * @param res
+ * @returns
+ */
 export const getUsersByParentId = async (req: Request, res: Response) => {
   try {
     const currentUser = req.user;
@@ -807,6 +861,8 @@ export const getUsersByParentId = async (req: Request, res: Response) => {
       .json({ message: "Internal server error" });
   }
 };
+
+// Helper functions
 
 const assignMap: Record<Role, Role[]> = {
   [Role.ADMIN]: [
