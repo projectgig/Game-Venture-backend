@@ -229,6 +229,185 @@ model SupportTicket {
   supportTickets SupportTicket[] @relation("TicketThread")
 }
 
+model NavMenu {
+  id        String    @id @default(cuid())
+  name      String
+  key       String    @unique
+  items     NavItem[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model NavItem {
+  id       String  @id @default(cuid())
+  label    String
+  url      String?
+  external Boolean @default(false)
+  icon     String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  parentId String?
+  parent   NavItem?  @relation("SubNav", fields: [parentId], references: [id])
+  children NavItem[] @relation("SubNav")
+
+  menuId String
+  menu   NavMenu @relation(fields: [menuId], references: [id])
+}
+
+model Footer {
+  id        String          @id @default(cuid())
+  sections  FooterSection[]
+  social    SocialLink[]
+  contact   FooterContact?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model FooterSection {
+  id       String       @id @default(cuid())
+  title    String
+  order    Int          @default(0)
+  links    FooterLink[]
+  footerId String
+  footer   Footer       @relation(fields: [footerId], references: [id])
+}
+
+model FooterLink {
+  id        String        @id @default(cuid())
+  label     String
+  url       String
+  external  Boolean       @default(false)
+  sectionId String
+  section   FooterSection @relation(fields: [sectionId], references: [id])
+}
+
+model SocialLink {
+  id           String      @id @default(cuid())
+  platform     String
+  url          String
+  order        Int         @default(0)
+  footerId     String
+  footer       Footer      @relation(fields: [footerId], references: [id])
+  siteConfig   SiteConfig? @relation(fields: [siteConfigId], references: [id])
+  siteConfigId String?
+}
+
+model FooterContact {
+  id       String  @id @default(cuid())
+  address  String?
+  email    String?
+  phone    String?
+  footerId String  @unique
+  footer   Footer  @relation(fields: [footerId], references: [id])
+}
+
+model SiteConfig {
+  id         String  @id @default(cuid())
+  siteName   String?
+  logoUrl    String?
+  faviconUrl String?
+
+  theme ThemeConfig?
+
+  contactInfo ContactInfo?
+
+  legalPages LegalPage[]
+
+  about AboutUs?
+
+  faqs FAQ[]
+
+  socialLinks SocialLink[]
+
+  seo SeoConfig?
+
+  featureFlags FeatureFlag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ThemeConfig {
+  id              String  @id @default(cuid())
+  primaryColor    String?
+  secondaryColor  String?
+  backgroundColor String?
+  textColor       String?
+
+  fontPrimary   String?
+  fontSecondary String?
+
+  darkMode Boolean @default(false)
+
+  configId String     @unique
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
+model ContactInfo {
+  id      String  @id @default(cuid())
+  email   String?
+  phone   String?
+  address String?
+  mapUrl  String?
+
+  configId String     @unique
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
+model LegalPage {
+  id       String  @id @default(cuid())
+  title    String
+  slug     String  @unique
+  content  String // HTML / Markdown
+  isActive Boolean @default(true)
+
+  configId String
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
+model AboutUs {
+  id          String  @id @default(cuid())
+  title       String?
+  description String? // HTML/Markdown
+  imageUrl    String?
+
+  configId String     @unique
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
+model FAQ {
+  id       String  @id @default(cuid())
+  question String
+  answer   String // HTML/Markdown
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  configId String
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
+model SeoConfig {
+  id              String  @id @default(cuid())
+  metaTitle       String?
+  metaDescription String?
+  keywords        String? // comma-separated
+  ogImageUrl      String?
+
+  configId String     @unique
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
+model FeatureFlag {
+  id          String  @id @default(cuid())
+  key         String  @unique // for example: "new_checkout", "enable_chat"
+  enabled     Boolean @default(false)
+  description String?
+
+  configId String
+  config   SiteConfig @relation(fields: [configId], references: [id])
+}
+
 enum TicketStatus {
   OPEN
   IN_PROGRESS

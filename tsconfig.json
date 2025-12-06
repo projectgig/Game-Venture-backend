@@ -23,6 +23,6 @@
     },
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["src/**/*", "src/types/**/*"],
+  "include": ["src/**/*", "src/types/**/*", "prisma/prisma.config.ts"],
   "exclude": ["node_modules", "dist"]
 }
